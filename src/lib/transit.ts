@@ -1,0 +1,203 @@
+/**
+ * 真实公共交通行程时间 —— 唯一依赖外部数据源的模块。
+ *
+ * 为什么需要它：房源数据里 nearestMrt 只有 station / line / walkMinutes，
+ * 没有任何站间行程时间。"通勤 40 分钟到 Raffles Place" 因此完全算不出来，
+ * 早先系统把它硬塞进 maxWalkMinutes + stations，反而把一个几乎不排除任何
+ * 东西的要求变成了整个查询里最紧的一条（21 套 → 0 套）。
+ *
+ * **边界要说清楚**：房源是作业提供的合成数据，一条都没换；这里取到的只是
+ * 站点之间的真实行程时间。两者拼在一起算总通勤：
+ *
+ *     总时长 = listing.nearestMrt.walkMinutes   （来自房源数据）
+ *            + transit(该站 → 目的地)            （来自 Google）
+ *
+ * 走到地铁站那一段仍然完全来自房源自己的字段。
+ *
+ * 为什么是 Distance Matrix 而不是逐条查路线：它一次请求能带 25 个起点，
+ * 85 个站分 4 次就查完，并发下大约 1 秒 —— 所以不需要"先缩小候选再算通勤"
+ * 那套顺序依赖，直接全量算，commute 就能当成普通硬约束用。
+ */
+
+/** 一次请求最多带几个起点（Google 的限制） */
+const ORIGINS_PER_REQUEST = 25;
+
+/** 外部依赖必须有超时 —— 挂了要退回"算不出来"，而不是让整轮对话卡死 */
+const TIMEOUT_MS = 8_000;
+
+/**
+ * 查行程时间用的出发时刻：下一个工作日早上 9 点。
+ *
+ * 公交行程时间随时刻变化（末班车、班次密度），必须固定一个参考时刻，
+ * 否则同一套房在深夜和早高峰查出来的结果不同，推荐就不可复现了。
+ * 选通勤高峰是因为用户问的就是上班通勤。
+ */
+function departureTime(now = new Date()): number {
+  const d = new Date(now);
+  d.setDate(d.getDate() + 1);
+  d.setHours(9, 0, 0, 0);
+  // 落在周末就推到周一
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return Math.floor(d.getTime() / 1000);
+}
+
+/** 站名 → 可供地理编码的查询串。加上国家限定，避免撞上别国同名站 */
+function originQuery(station: string): string {
+  return `${station} MRT Station, Singapore`;
+}
+
+/**
+ * 目的地**不查我们的闭集**。
+ *
+ * 用户要去的地方可以是任何地方 —— NUS、樟宜机场、某个商场 —— 这些都不在
+ * 房源数据的词表里。拿闭集卡目的地会把 "how far is it from NUS?"（作业原文
+ * 给的示例问题）直接丢掉。交给 Google 去解析，解析不出来就诚实说找不到。
+ */
+function destinationQuery(destination: string): string {
+  return /singapore/i.test(destination) ? destination : `${destination}, Singapore`;
+}
+
+export type TransitLookup = {
+  /** 站名 → 到目的地的分钟数。查不到的站不出现在这里 */
+  minutes: Map<string, number>;
+  /** 目的地是否解析成功。false 时 minutes 一定是空的 */
+  resolved: boolean;
+  /** 失败原因，进日志和降级提示 */
+  error?: string;
+};
+
+export interface TransitProvider {
+  lookup(stations: string[], destination: string): Promise<TransitLookup>;
+}
+
+// ---------------------------------------------------------------------------
+
+type MatrixResponse = {
+  status: string;
+  error_message?: string;
+  origin_addresses?: string[];
+  destination_addresses?: string[];
+  rows?: Array<{ elements: Array<{ status: string; duration?: { value: number } }> }>;
+};
+
+/**
+ * Google Distance Matrix 实现。
+ *
+ * 缓存键是 `站名|目的地`，跨对话、跨用户共享 —— 站点和目的地都是稳定实体，
+ * 行程时间在参考时刻固定的前提下也是稳定的。进程内缓存即可：
+ * Vercel 冷启动会丢，但代价只是重新查一次，不影响正确性。
+ */
+export class GoogleTransitProvider implements TransitProvider {
+  private cache = new Map<string, number>();
+  /** 解析失败过的目的地不再重试 —— 拼错的地名重试多少次都一样 */
+  private unresolvable = new Set<string>();
+
+  // 显式字段而不是构造函数参数属性 —— 后者不是可擦除语法，
+  // Node 直接跑 .ts 时编译不过（tsconfig 开了 erasableSyntaxOnly）
+  private apiKey: string;
+
+  constructor(apiKey: string) {
+    this.apiKey = apiKey;
+  }
+
+  async lookup(stations: string[], destination: string): Promise<TransitLookup> {
+    const minutes = new Map<string, number>();
+    if (this.unresolvable.has(destination)) {
+      return { minutes, resolved: false, error: "destination could not be resolved" };
+    }
+
+    const missing: string[] = [];
+    for (const station of stations) {
+      const cached = this.cache.get(`${station}|${destination}`);
+      if (cached === undefined) missing.push(station);
+      else minutes.set(station, cached);
+    }
+
+    if (missing.length === 0) return { minutes, resolved: true };
+
+    const batches: string[][] = [];
+    for (let i = 0; i < missing.length; i += ORIGINS_PER_REQUEST) {
+      batches.push(missing.slice(i, i + ORIGINS_PER_REQUEST));
+    }
+
+    const depart = departureTime();
+    let anyResolved = false;
+    let error: string | undefined;
+
+    // 并发发出去 —— 4 个请求串行是 4 倍延迟，没有理由
+    const results = await Promise.all(
+      batches.map((batch) => this.fetchBatch(batch, destination, depart)),
+    );
+
+    for (const [index, result] of results.entries()) {
+      if ("error" in result) {
+        error ??= result.error;
+        continue;
+      }
+      anyResolved = true;
+      for (const [offset, seconds] of result.durations.entries()) {
+        if (seconds === null) continue;
+        const station = batches[index][offset];
+        const value = Math.round(seconds / 60);
+        this.cache.set(`${station}|${destination}`, value);
+        minutes.set(station, value);
+      }
+    }
+
+    // 一个站都没查到 ⇒ 目的地本身有问题，记下来别再浪费请求
+    if (!anyResolved && minutes.size === 0) {
+      this.unresolvable.add(destination);
+      return { minutes, resolved: false, error: error ?? "no route data returned" };
+    }
+
+    return { minutes, resolved: true, ...(error ? { error } : {}) };
+  }
+
+  private async fetchBatch(
+    stations: string[],
+    destination: string,
+    depart: number,
+  ): Promise<{ durations: Array<number | null> } | { error: string }> {
+    const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
+    url.searchParams.set("origins", stations.map(originQuery).join("|"));
+    url.searchParams.set("destinations", destinationQuery(destination));
+    url.searchParams.set("mode", "transit");
+    url.searchParams.set("departure_time", String(depart));
+    url.searchParams.set("key", this.apiKey);
+
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      if (!response.ok) return { error: `distance matrix HTTP ${response.status}` };
+
+      const body = (await response.json()) as MatrixResponse;
+      if (body.status !== "OK") {
+        // key 无效、超额、参数错 —— 都在这里现形。带上 error_message 便于排查
+        return { error: `${body.status}${body.error_message ? `: ${body.error_message}` : ""}` };
+      }
+
+      return {
+        durations: (body.rows ?? []).map((row) => {
+          const element = row.elements?.[0];
+          return element?.status === "OK" && element.duration
+            ? element.duration.value
+            : null;
+        }),
+      };
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return { error: `distance matrix request failed: ${message}` };
+    }
+  }
+}
+
+/** 没配 key 时用它 —— 行为完全等同于"这条约束算不出来"，和接入前一致 */
+export class UnavailableTransitProvider implements TransitProvider {
+  async lookup(): Promise<TransitLookup> {
+    return { minutes: new Map(), resolved: false, error: "GOOGLE_MAPS_API_KEY is not set" };
+  }
+}
+
+export function createTransitProvider(): TransitProvider {
+  const key = process.env.GOOGLE_MAPS_API_KEY;
+  return key ? new GoogleTransitProvider(key) : new UnavailableTransitProvider();
+}

@@ -249,6 +249,13 @@ textarea {
   color: var(--accent);
 }
 
+/* 通勤时间来自外部实时数据，不是房源自带字段 —— 视觉上和普通命中项区分开 */
+.chip.commute {
+  background: #eef2ff;
+  color: #4338ca;
+  font-weight: 600;
+}
+
 .chip.caveat {
   background: var(--warn-soft);
   color: var(--warn);

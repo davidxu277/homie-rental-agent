@@ -11,6 +11,7 @@ import { join } from "node:path";
 
 import { runTurn, type Conversation } from "../../../src/lib/agent.ts";
 import { createClient } from "../../../src/lib/claude.ts";
+import { createTransitProvider } from "../../../src/lib/transit.ts";
 import type { CleanListing } from "../../../src/lib/types.ts";
 import { buildVocab, type Vocab } from "../../../src/lib/vocab.ts";
 
@@ -19,6 +20,12 @@ export const maxDuration = 60;
 
 /** 房源和词表在进程内只加载一次 —— 500 条数据常驻内存，查询是毫秒级 */
 let cache: { listings: CleanListing[]; vocab: Vocab } | null = null;
+
+/**
+ * 行程时间来源在模块作用域里保留 —— 它内部有缓存。
+ * 每次请求新建一个，缓存就永远是空的，每轮都要重新掏钱查一遍。
+ */
+const transit = createTransitProvider();
 
 async function getData() {
   if (cache) return cache;
@@ -49,6 +56,7 @@ export async function POST(request: Request) {
       userText,
       listings,
       vocab,
+      transit,
     });
     return Response.json(result);
   } catch (error) {

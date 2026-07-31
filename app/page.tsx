@@ -17,6 +17,8 @@ type Turn = {
   user: string;
   reply?: string;
   hits?: ScoredListing[];
+  /** 房源 id → 门到门通勤分钟数 */
+  commuteMinutes?: Record<string, number>;
   error?: string;
 };
 
@@ -47,6 +49,8 @@ export default function Page() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  /** 上一轮通勤有没有真的参与筛选 —— 决定侧栏标不标"未筛选" */
+  const [commuteApplied, setCommuteApplied] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -84,8 +88,15 @@ export default function Page() {
       }
 
       setConversation(data.conversation);
+      // Map 经过 JSON 往返会变成对象，这里按对象用
+      const minutes = data.commute?.minutes as unknown as Record<string, number> | undefined;
+      setCommuteApplied(data.commute?.applied ?? false);
       setTurns((prev) =>
-        prev.map((t, i) => (i === index ? { ...t, reply: data.reply, hits: data.hits } : t)),
+        prev.map((t, i) =>
+          i === index
+            ? { ...t, reply: data.reply, hits: data.hits, commuteMinutes: minutes }
+            : t,
+        ),
       );
     } catch {
       setTurns((prev) =>
@@ -148,7 +159,12 @@ export default function Page() {
                   {turn.hits && turn.hits.length > 0 && (
                     <div className="cards">
                       {turn.hits.map((hit, rank) => (
-                        <ListingCard key={hit.listing.id} hit={hit} rank={rank + 1} />
+                        <ListingCard
+                          key={hit.listing.id}
+                          hit={hit}
+                          rank={rank + 1}
+                          commuteMinutes={turn.commuteMinutes?.[hit.listing.id]}
+                        />
                       ))}
                     </div>
                   )}
@@ -200,8 +216,8 @@ export default function Page() {
                 {conversation.state.meta[slot]?.pinned && <span className="pin">must</span>}
                 {/* 通勤记下来了但筛不了（数据没有站间行程时间）—— 必须让用户看见这个区别，
                     否则他会以为结果已经按通勤过滤过了 */}
-                {slot === "commute" && (
-                  <span className="pin unfiltered" title="No journey-time data, so this isn't used as a filter">
+                {slot === "commute" && !commuteApplied && (
+                  <span className="pin unfiltered" title="No journey-time data available, so this isn't used as a filter">
                     not filtered
                   </span>
                 )}
@@ -239,7 +255,11 @@ export default function Page() {
   );
 }
 
-function ListingCard({ hit, rank }: { hit: ScoredListing; rank: number }) {
+function ListingCard({
+  hit,
+  rank,
+  commuteMinutes,
+}: { hit: ScoredListing; rank: number; commuteMinutes?: number }) {
   const l = hit.listing;
   const mrt = l.nearestMrt;
 
@@ -273,6 +293,10 @@ function ListingCard({ hit, rank }: { hit: ScoredListing; rank: number }) {
       </div>
 
       <div className="chips">
+        {/* 门到门时间来自真实公交数据，不是房源字段 —— 单独用一个样式标出来 */}
+        {commuteMinutes !== undefined && (
+          <span className="chip commute">🚇 {commuteMinutes} min door-to-door</span>
+        )}
         {hit.matched.map((label) => (
           <span className="chip" key={label}>
             ✓ {label}

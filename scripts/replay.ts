@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { newConversation, runTurn, type Conversation } from "../src/lib/agent.ts";
 import { createClient } from "../src/lib/claude.ts";
+import { createTransitProvider } from "../src/lib/transit.ts";
 import { toSearchQuery } from "../src/lib/state.ts";
 import type { CleanListing } from "../src/lib/types.ts";
 import { buildVocab } from "../src/lib/vocab.ts";
@@ -41,6 +42,7 @@ const listings: CleanListing[] = JSON.parse(
 );
 const vocab = buildVocab(listings);
 const client = createClient();
+const transit = createTransitProvider();
 
 const filter = process.argv.slice(2);
 const files = readdirSync(SESSIONS)
@@ -90,7 +92,14 @@ for (const file of files) {
 
     let result: Awaited<ReturnType<typeof runTurn>>;
     try {
-      result = await runTurn({ client, conversation, userText: turn.content, listings, vocab });
+      result = await runTurn({
+        client,
+        conversation,
+        userText: turn.content,
+        listings,
+        vocab,
+        transit,
+      });
     } catch (error) {
       const message = (error as Error).message;
       console.error(`  ✗ 失败：${message}`);

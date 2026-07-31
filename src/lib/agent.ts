@@ -15,7 +15,9 @@ import {
   generateReply,
   type ReplySituation,
 } from "./claude.ts";
+import { applyCommuteFilter, type CommuteOutcome } from "./commute.ts";
 import { buildConflictInsight, type ConflictInsight } from "./insight.ts";
+import type { TransitProvider } from "./transit.ts";
 import {
   computeRelaxations,
   searchListings,
@@ -95,6 +97,8 @@ export type TurnResult = {
   dropped: Array<{ slot: string; value: unknown; reason: string }>;
   hits: ScoredListing[];
   total: number;
+  /** 这一轮通勤有没有真的参与筛选，以及各房源的门到门分钟数 */
+  commute: CommuteOutcome;
   relaxations: Relaxation[];
   usage: { input: number; output: number };
 };
@@ -105,6 +109,8 @@ export type TurnOptions = {
   userText: string;
   listings: CleanListing[];
   vocab: Vocab;
+  /** 行程时间来源。注入而不是内部 new，是为了测试能塞一个不联网的桩 */
+  transit: TransitProvider;
   /** 一次最多展示几套 */
   limit?: number;
 };
@@ -127,7 +133,18 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   const mentionedThisTurn = Object.keys(extraction.patch) as SlotKey[];
 
   // --- ② 检索 --------------------------------------------------------------
-  const result = searchListings(listings, toSearchQuery(state), { limit });
+  //
+  // 分两段：内存过滤（纯函数、可测）跑完之后，才对候选集补一次外部行程时间查询。
+  // 通勤不能做成谓词 —— 那会让 searchListings 变成 async，整套纯函数测试全得改。
+  const query = toSearchQuery(state);
+  const base = searchListings(listings, query, { limit: 10_000 });
+  const refined = await applyCommuteFilter(base, query.commute, options.transit);
+  const result = {
+    ...base,
+    hits: refined.hits.slice(0, limit),
+    total: refined.total,
+  };
+  const commute = refined.commute;
 
   // --- ③ 分支（产品决策，确定性的） ----------------------------------------
   let situation: ReplySituation;
@@ -252,6 +269,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     conflictInsight,
     question,
     locationNote: extraction.locationNote,
+    commute,
   });
 
   // --- ⑤ 决定贴哪些卡片 ----------------------------------------------------
@@ -288,6 +306,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     dropped: extraction.dropped,
     hits: cards,
     total: result.total,
+    commute,
     relaxations,
     usage: {
       input: extraction.usage.input + reply.usage.input,

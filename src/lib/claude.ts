@@ -14,6 +14,7 @@ import {
   validatePatch,
   type ValidationResult,
 } from "./extract.ts";
+import type { CommuteOutcome } from "./commute.ts";
 import type { ConflictInsight } from "./insight.ts";
 import type { Relaxation, ScoredListing } from "./search.ts";
 import type { RequirementState } from "./state.ts";
@@ -300,17 +301,25 @@ const REPLY_SYSTEM = `You are a Singapore rental assistant. The user is looking 
   "direct owner (directOwner: true)", "no agent fee (agentFee: none)", "furnishing is partial" are all wrong —
   say it plainly: "rented direct by the owner, no agent fee", "only partly furnished".
 
-## Commute: you cannot check it, so say so
-If understoodRequirements contains a commute (a place the user travels to, e.g. "Raffles Place, by MRT, under 40 min"),
-**the search did not filter on it.** The listing data has each place's nearest station, line and walking minutes — but no
-travel times between stations, so a journey time cannot be computed at all.
+## Commute: check the commute field before you say anything about journey times
+The commute field tells you exactly what happened this turn. **Read it. Never assume.**
 
-- **Say this plainly the first time it comes up**, in one clause: "I can't work out MRT journey times from the listing data,
-  so I haven't filtered on your 40-minute commute — here's what matches everything else."
-- Then help them judge it themselves: each card shows its nearest station and line.
+- **commute.applied = true** — journey times are real and the results ARE filtered by them.
+  commuteMinutes gives each listing's door-to-door time (walk to the station + the train ride).
+  Use those numbers freely: "38 min door-to-door to Raffles Place". They come from live transit data.
+  If commute.unverified is above 0, that many listings are still in the results without a checked journey time
+  (no station on the listing, or no route found) — mention it only if it matters to the choice.
+- **commute.applied = false with a reason** — the journey time could not be worked out, so the results are
+  **not** filtered by it. Say so plainly in one clause: "I couldn't check journey times just now, so these
+  aren't filtered by your 40-minute commute." Then let them judge from the station and line on each card.
+- **No commute field at all** — the user hasn't given you a destination. Don't bring it up.
+
+Two things never to do:
 - **Never describe a search you didn't run.** "Nothing under $900 with a commute below 40 minutes" is a lie when
-  commute was never a filter — and the user can't tell, so they'll conclude their budget is the problem and raise it for nothing.
-- Don't guess journey times from the line name. Being on the same line as the destination means nothing about distance.
+  commute wasn't filtered — the user can't tell, so they'll conclude their budget is the problem and raise it for nothing.
+- **Never estimate a journey time yourself.** Not from the line name, not from what you know about Singapore geography.
+  Being on the same line as the destination says nothing about distance. If commuteMinutes has no number for a listing,
+  you don't know its journey time — say that instead of guessing.
 
 ## Ranking: the cards are already sorted by match quality
 The rank in listings is the card's position on screen, and **rank 1 is the best match the system computed**.
@@ -483,6 +492,8 @@ export type ReplyOptions = {
   conflictInsight?: ConflictInsight;
   question?: string;
   locationNote?: string;
+  /** 通勤这一轮到底筛没筛，以及门到门分钟数 */
+  commute?: CommuteOutcome;
 };
 
 export type ReplyOutcome = {
@@ -531,6 +542,18 @@ export async function generateReply(options: ReplyOptions): Promise<ReplyOutcome
                 relaxations: options.relaxations,
                 conflictInsight: options.conflictInsight,
                 question: options.question,
+                // Map 不能直接进 JSON —— 展开成模型能读的形状
+                commute: options.commute
+                  ? {
+                      applied: options.commute.applied,
+                      reason: options.commute.reason,
+                      unverified: options.commute.unverified,
+                    }
+                  : undefined,
+                commuteMinutes:
+                  options.commute && options.commute.minutes.size > 0
+                    ? Object.fromEntries(options.commute.minutes)
+                    : undefined,
               },
               null,
               2,
