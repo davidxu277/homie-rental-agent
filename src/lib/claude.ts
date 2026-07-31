@@ -104,9 +104,14 @@ Rules:
    - **maxWalkMinutes** — only ever "X minutes' **walk** to the MRT / to a station". Never a travel time.
      "40 min by MRT" is not a 40-minute walk; putting it here silently passes almost every listing while looking like a real constraint.
 
-   Naming a workplace on its own, with no duration ("I work in Clementi, what's around there?"), is still a hint about where they
-   want to live — set commute.destination **and** the surrounding areas. But once they give a travel tolerance, they are telling you
-   they will live further away, so **do not** also pin them to that destination via stations/areas.
+   **A place named as a somewhere-they-go never also goes into areas / districts / stations.** Those are hard filters
+   meaning "the property must sit in this area", which is far narrower than "near there". A user who says
+   "the kids study around Bukit Timah, somewhere close would be great" would happily take a 30-minute ride from
+   another neighbourhood — writing areas = [Bukit Timah] silently throws all of those away, and they can't see why.
+   Set commute.destination alone; the system ranks by journey time, so nearer places surface first without excluding anyone.
+
+   Use areas / districts / stations **only** when the user says where they want to live:
+   "I want to live in Clementi", "anywhere in the east", "near Bedok MRT", "show me places in D15".
 
    Every place value must **already exist** in areas / stations / districts. If nothing matches, return empty — never invent.
    When you resolve something, say in locationNote which places you searched.

@@ -17,6 +17,7 @@
 
 import {
   computeRelaxations,
+  decay,
   rankRelaxations,
   relaxationCandidates,
   searchListings,
@@ -138,9 +139,13 @@ export async function applyCommuteFilter(
     minutes.set(hit.listing.id, doorToDoor);
 
     if (need.maxMinutes === undefined || doorToDoor <= need.maxMinutes) {
-      kept.push(hit);
+      // 用真实门到门时间替换掉"走到最近地铁站几分钟"这个代理指标
+      kept.push(rescore(hit, doorToDoor, need.destination));
     }
   }
+
+  // 重打分改变了名次，得重排 —— 否则卡片顺序还是按旧分数来的
+  kept.sort((a, b) => b.score - a.score || a.listing.id.localeCompare(b.listing.id));
 
   return {
     hits: kept,
@@ -191,4 +196,41 @@ export async function computeRelaxationsWithCommute(
   ]);
 
   return rankRelaxations(candidates, before, after, options);
+}
+
+/**
+ * 拿到真实通勤时间后重新打分。
+ *
+ * 检索层的 commute 维度只看「走到最近地铁站几分钟」—— 在没有目的地时这是
+ * 唯一能用的信号，但用户一旦说了"我要去 Bukit Timah"，门到门时间显然更贴切：
+ * 走 2 分钟到地铁站却要坐 50 分钟，和走 8 分钟坐 15 分钟，前者根本不算方便。
+ *
+ * 这一步也是「离 X 近」这种**软偏好**的落点。用户说"住附近就好"却没给时长，
+ * 不该被翻译成硬过滤（早先写进 areas，把 34 分钟车程的房源直接扔掉了），
+ * 而该让近的排前面、远的仍然看得见 —— 排序是表达偏好的正确方式。
+ */
+const COMMUTE_BEST_MINUTES = 15;
+const COMMUTE_WORST_MINUTES = 75;
+
+function rescore(hit: ScoredListing, doorToDoor: number, destination: string): ScoredListing {
+  const breakdown = hit.breakdown.map((component) =>
+    component.dimension === "commute"
+      ? {
+          ...component,
+          raw: decay(doorToDoor, COMMUTE_BEST_MINUTES, COMMUTE_WORST_MINUTES),
+          weighted:
+            decay(doorToDoor, COMMUTE_BEST_MINUTES, COMMUTE_WORST_MINUTES) * component.weight,
+          evidence: `${doorToDoor} min door-to-door to ${destination}`,
+        }
+      : component,
+  );
+
+  // 和 scoreOne 里一致：不适用的维度（raw = null）不进分母，
+  // 免得"没数据"被当成"得分低"
+  const applicable = breakdown.filter((c) => c.raw !== null);
+  const totalWeight = applicable.reduce((sum, c) => sum + c.weight, 0);
+  const score =
+    totalWeight === 0 ? 0 : applicable.reduce((sum, c) => sum + c.weighted, 0) / totalWeight;
+
+  return { ...hit, score, breakdown };
 }

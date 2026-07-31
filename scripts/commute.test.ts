@@ -29,7 +29,16 @@ function listing(id: string, station: string | null, walkMinutes = 5): ScoredLis
       nearestMrt: station === null ? null : { station, line: "EWL", walkMinutes },
     },
     score: 0.5,
-    breakdown: [],
+    // 必须带上 commute 维度：拿到真实通勤时间后要替换它并重算总分
+    breakdown: [
+      {
+        dimension: "commute",
+        raw: 0.5,
+        weight: 2,
+        weighted: 1,
+        evidence: `${walkMinutes} min walk to ${station}`,
+      },
+    ],
     matched: [],
     caveats: [],
   } as unknown as ScoredListing;
@@ -120,7 +129,7 @@ describe("通勤过滤", () => {
       stub({ Bedok: 30 }),
     );
 
-    assert.deepEqual(out.hits.map((h) => h.listing.id), ["A", "B"]);
+    assert.deepEqual(out.hits.map((h) => h.listing.id).sort(), ["A", "B"]);
     assert.equal(out.commute.unverified, 1);
     assert.equal(out.commute.minutes.has("B"), false, "没核算过就不该有分钟数");
   });
@@ -137,7 +146,7 @@ describe("通勤过滤", () => {
       stub({ Bedok: 30, "Pasir Ris": 50 }),
     );
 
-    assert.deepEqual(out.hits.map((h) => h.listing.id), ["A", "C"]);
+    assert.deepEqual(out.hits.map((h) => h.listing.id).sort(), ["A", "C"]);
     assert.equal(out.commute.unverified, 1);
     assert.equal(out.commute.applied, true);
   });
@@ -382,5 +391,56 @@ describe("出行方式", () => {
       stub({ Near: 10 }),
     );
     assert.equal(out.commute.minutes.get("A"), 10, "只算车程，不叠加步行段");
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * 「离 X 近」是软偏好，该体现在排序上，不该变成硬过滤。
+ *
+ * 真实事故：用户说"孩子在 Bukit Timah 上学，住附近就好"，系统把它写进了
+ * areas（硬过滤 = 房子必须位于该区），把一套 34 分钟车程、其余条件全中的
+ * 房源直接扔掉了。用户看到"没有符合的"，却不知道是被一条自己没提过的
+ * 住址限制挡住的。
+ */
+describe("只给目的地时按通勤排序，不排除任何人", () => {
+  it("近的排前面，远的仍然在结果里", async () => {
+    const base = result([
+      listing("FAR", "Far", 2), // 2 + 60 = 62 分钟，但走到地铁站只要 2 分钟
+      listing("NEAR", "Near", 8), // 8 + 10 = 18 分钟
+    ]);
+    const out = await applyCommuteFilter(
+      base,
+      { destination: "Bukit Timah" }, // 没有 maxMinutes
+      stub({ Far: 60, Near: 10 }),
+    );
+
+    assert.equal(out.hits.length, 2, "没给时长就不该排除任何房源");
+    assert.equal(out.hits[0].listing.id, "NEAR", "18 分钟的该排在 62 分钟前面");
+    assert.equal(out.commute.applied, false, "这不是过滤，只是排序");
+  });
+
+  it("排序用的是门到门时间，不是走到地铁站的时间", async () => {
+    // FAR 走到地铁站更快（2 vs 8），但总时长差得多 —— 旧逻辑会把它排在前面
+    const base = result([listing("FAR", "Far", 2), listing("NEAR", "Near", 8)]);
+    const out = await applyCommuteFilter(
+      base,
+      { destination: "X" },
+      stub({ Far: 60, Near: 10 }),
+    );
+    const near = out.hits.find((h) => h.listing.id === "NEAR");
+    const far = out.hits.find((h) => h.listing.id === "FAR");
+    assert.ok((near?.score ?? 0) > (far?.score ?? 0));
+  });
+
+  it("重打分后的证据写的是门到门，便于解释推荐理由", async () => {
+    const out = await applyCommuteFilter(
+      result([listing("A", "Near", 5)]),
+      { destination: "Bukit Timah" },
+      stub({ Near: 10 }),
+    );
+    const commute = out.hits[0].breakdown.find((c) => c.dimension === "commute");
+    assert.match(commute?.evidence ?? "", /15 min door-to-door to Bukit Timah/);
   });
 });

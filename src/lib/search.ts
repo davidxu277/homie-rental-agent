@@ -372,7 +372,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
 // ---------------------------------------------------------------------------
 
 /** 把「越小越好」的值映射到 0-1，超过 worst 记 0 */
-function decay(value: number, best: number, worst: number): number {
+export function decay(value: number, best: number, worst: number): number {
   if (worst <= best) return 1;
   if (value <= best) return 1;
   if (value >= worst) return 0;
