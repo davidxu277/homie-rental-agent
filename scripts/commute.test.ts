@@ -11,7 +11,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { applyCommuteFilter } from "../src/lib/commute.ts";
+import { applyCommuteFilter, toSummary } from "../src/lib/commute.ts";
 import type { ScoredListing, SearchResult } from "../src/lib/search.ts";
 import { departureTime } from "../src/lib/transit.ts";
 import type { TransitLookup, TransitProvider } from "../src/lib/transit.ts";
@@ -204,5 +204,34 @@ describe("出发时刻固定在新加坡工作日早高峰", () => {
   it("永远是将来的时刻 —— transit 模式不接受过去的出发时间", () => {
     const now = new Date();
     assert.ok(departureTime(now) > Math.floor(now.getTime() / 1000));
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Map 过不了 JSON。
+ *
+ * `JSON.stringify(new Map([["a",1]]))` 是 `"{}"` —— 不报错，数据静悄悄没了。
+ * 线上踩过：通勤筛选正常、模型也拿到了分钟数，但前端卡片上的时间死活不显示。
+ */
+describe("通勤结果要能过 JSON", () => {
+  it("摊平后 JSON 往返不丢分钟数", async () => {
+    const base = result([listing("A", "Bedok", 5), listing("B", "Eunos", 3)]);
+    const out = await applyCommuteFilter(
+      base,
+      { destination: "Raffles Place", maxMinutes: 60 },
+      stub({ Bedok: 30, Eunos: 25 }),
+    );
+
+    const wire = JSON.parse(JSON.stringify(toSummary(out.commute)));
+    assert.deepEqual(wire.minutes, { A: 35, B: 28 });
+    assert.equal(wire.applied, true);
+    assert.equal(wire.unverified, 0);
+  });
+
+  it("直接序列化原始结果会丢数据 —— 这就是必须摊平的原因", () => {
+    const raw = { minutes: new Map([["A", 35]]) };
+    assert.deepEqual(JSON.parse(JSON.stringify(raw)).minutes, {}, "Map 会变成空对象");
   });
 });

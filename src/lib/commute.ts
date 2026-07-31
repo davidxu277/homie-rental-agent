@@ -29,6 +29,29 @@ export type CommuteOutcome = {
   unverified: number;
 };
 
+/**
+ * 过网络的形状。
+ *
+ * CommuteOutcome.minutes 是 Map，而 `JSON.stringify(new Map())` 是 `{}` ——
+ * 不会报错，只是数据静悄悄地没了。踩过：线上通勤筛选正常、模型也拿到了
+ * 分钟数，但前端卡片上的时间死活不显示。凡是要过 JSON 的地方都得摊平。
+ */
+export type CommuteSummary = {
+  applied: boolean;
+  reason?: string;
+  unverified: number;
+  minutes: Record<string, number>;
+};
+
+export function toSummary(outcome: CommuteOutcome): CommuteSummary {
+  return {
+    applied: outcome.applied,
+    ...(outcome.reason ? { reason: outcome.reason } : {}),
+    unverified: outcome.unverified,
+    minutes: Object.fromEntries(outcome.minutes),
+  };
+}
+
 export const NO_COMMUTE: CommuteOutcome = {
   applied: false,
   minutes: new Map(),

@@ -15,7 +15,7 @@ import {
   generateReply,
   type ReplySituation,
 } from "./claude.ts";
-import { applyCommuteFilter, type CommuteOutcome } from "./commute.ts";
+import { applyCommuteFilter, toSummary, type CommuteSummary } from "./commute.ts";
 import { buildConflictInsight, type ConflictInsight } from "./insight.ts";
 import type { TransitProvider } from "./transit.ts";
 import {
@@ -97,8 +97,8 @@ export type TurnResult = {
   dropped: Array<{ slot: string; value: unknown; reason: string }>;
   hits: ScoredListing[];
   total: number;
-  /** 这一轮通勤有没有真的参与筛选，以及各房源的门到门分钟数 */
-  commute: CommuteOutcome;
+  /** 这一轮通勤有没有真的参与筛选，以及各房源的门到门分钟数（已摊平，可过 JSON） */
+  commute: CommuteSummary;
   relaxations: Relaxation[];
   usage: { input: number; output: number };
 };
@@ -306,7 +306,7 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     dropped: extraction.dropped,
     hits: cards,
     total: result.total,
-    commute,
+    commute: toSummary(commute),
     relaxations,
     usage: {
       input: extraction.usage.input + reply.usage.input,
