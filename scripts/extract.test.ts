@@ -27,8 +27,12 @@ const VOCAB: Vocab = {
   occupantTypes: ["any", "student", "family"],
 };
 
-function run(patch: ExtractedPatch) {
-  return validatePatch(patch, VOCAB);
+/**
+ * @param userText 用户原话。通勤的方式和时长要靠它举证 ——
+ *   缺省是空串（= 无从核对），这两项会被守卫剥掉。
+ */
+function run(patch: ExtractedPatch, userText = "") {
+  return validatePatch(patch, VOCAB, {}, userText);
 }
 
 // ===========================================================================
@@ -381,9 +385,10 @@ describe("schema 的两个硬约束", () => {
  */
 describe("通勤目的地是独立槽位", () => {
   it("目的地落进 commute，不污染住址槽位", () => {
-    const { patch, dropped } = run({
-      set: { commute: { destination: "Buona Vista", mode: "mrt", maxMinutes: 40 } },
-    });
+    const { patch, dropped } = run(
+      { set: { commute: { destination: "Buona Vista", mode: "mrt", maxMinutes: 40 } } },
+      "I take the MRT to Buona Vista, under 40 minutes please",
+    );
     assert.deepEqual(patch.commute?.value, {
       destination: "Buona Vista",
       mode: "mrt",
@@ -417,9 +422,10 @@ describe("通勤目的地是独立槽位", () => {
   });
 
   it("方式认不出时只丢方式，目的地保留 —— 部分信息比零信息有用", () => {
-    const value = run({
-      set: { commute: { destination: "Clementi", mode: "teleport", maxMinutes: 20 } },
-    }).patch.commute?.value as { destination: string; mode?: string; maxMinutes?: number };
+    const value = run(
+      { set: { commute: { destination: "Clementi", mode: "teleport", maxMinutes: 20 } } },
+      "I teleport there in 20 minutes",
+    ).patch.commute?.value as { destination: string; mode?: string; maxMinutes?: number };
     assert.equal(value.destination, "Clementi");
     assert.equal(value.mode, undefined);
     assert.equal(value.maxMinutes, 20);
@@ -443,5 +449,115 @@ describe("通勤目的地是独立槽位", () => {
 
   it("commute 在合法槽位清单里", () => {
     assert.ok(EXTRACTABLE_SLOTS.includes("commute"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * 通勤的方式和时长必须有用户原话支撑。
+ *
+ * 真实事故：用户说 "the children will study around Bukit Timah, so somewhere
+ * close would be great" —— 一个字没提交通工具和时长，系统却抽出
+ * `by DRIVE, under 20 min`，两者都成了硬过滤。用户看不出这个 20 分钟哪来的，
+ * 也不知道自己被挡掉了多少房源。
+ *
+ * 而且这个编造是**间歇性的**，同一句话复现两次都正常 —— 所以不能靠 prompt，
+ * 必须有代码层面的客观检验。和地点走闭集是同一个思路。
+ */
+describe("通勤的方式和时长要有原话支撑", () => {
+  const SAID_NOTHING =
+    "Location matters a lot — the children will study around Bukit Timah, so somewhere close would be great.";
+
+  it("没提交通工具和时长时，两个都被丢弃，目的地保留", () => {
+    const { patch, dropped } = validatePatch(
+      { set: { commute: { destination: "Clementi", mode: "drive", maxMinutes: 20 } } },
+      VOCAB,
+      {},
+      SAID_NOTHING,
+    );
+    assert.deepEqual(patch.commute?.value, { destination: "Clementi" });
+    assert.equal(dropped.filter((d) => d.slot.startsWith("commute.")).length, 2);
+  });
+
+  it("用户确实说了就保留", () => {
+    const { patch } = validatePatch(
+      { set: { commute: { destination: "Clementi", mode: "drive", maxMinutes: 20 } } },
+      VOCAB,
+      {},
+      "I drive to work and need to be within 20 minutes",
+    );
+    assert.deepEqual(patch.commute?.value, {
+      destination: "Clementi",
+      mode: "drive",
+      maxMinutes: 20,
+    });
+  });
+
+  it("「close / nearby / not too far」都不是时长", () => {
+    for (const text of ["somewhere close", "nearby would be nice", "not too far please"]) {
+      const { patch } = validatePatch(
+        { set: { commute: { destination: "Clementi", maxMinutes: 15 } } },
+        VOCAB,
+        {},
+        text,
+      );
+      assert.equal(
+        (patch.commute?.value as { maxMinutes?: number }).maxMinutes,
+        undefined,
+        `"${text}" 不该被当成时长`,
+      );
+    }
+  });
+
+  it("光有数字不算 —— 3-bedroom 里的 3 不是时长", () => {
+    const { patch } = validatePatch(
+      { set: { commute: { destination: "Clementi", maxMinutes: 20 } } },
+      VOCAB,
+      {},
+      "We want a 3-bedroom condo with a budget of $7,000",
+    );
+    assert.equal((patch.commute?.value as { maxMinutes?: number }).maxMinutes, undefined);
+  });
+
+  it("「half an hour」算时长", () => {
+    const { patch } = validatePatch(
+      { set: { commute: { destination: "Clementi", maxMinutes: 30 } } },
+      VOCAB,
+      {},
+      "I'd like to be within half an hour of the office",
+    );
+    assert.equal((patch.commute?.value as { maxMinutes: number }).maxMinutes, 30);
+  });
+
+  it("上一轮说过的值不用重新举证 —— 否则重提目的地会把时长弄丢", () => {
+    const { patch } = validatePatch(
+      { set: { commute: { destination: "Tampines", mode: "mrt", maxMinutes: 40 } } },
+      VOCAB,
+      { commute: { destination: "Clementi", mode: "mrt", maxMinutes: 40 } },
+      "actually make it Tampines instead",
+    );
+    assert.deepEqual(patch.commute?.value, {
+      destination: "Tampines",
+      mode: "mrt",
+      maxMinutes: 40,
+    });
+  });
+
+  it("坐地铁、坐巴士、走路都认得出来", () => {
+    const cases: Array<[string, string]> = [
+      ["I take the MRT to work", "mrt"],
+      ["I go by bus", "bus"],
+      ["I walk to the office", "walk"],
+    ];
+    for (const [text, mode] of cases) {
+      const { patch } = validatePatch(
+        { set: { commute: { destination: "Clementi", mode } } },
+        VOCAB,
+        {},
+        text,
+      );
+      assert.equal((patch.commute?.value as { mode?: string }).mode, mode, text);
+    }
   });
 });

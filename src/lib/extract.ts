@@ -123,6 +123,58 @@ export type ExtractedPatch = {
 const COMMUTE_MODES = ["mrt", "bus", "walk", "drive"];
 
 /**
+ * 出行方式的词面证据。用户没说过这些词，就不能说他指定了方式。
+ */
+const MODE_EVIDENCE: Record<string, RegExp> = {
+  drive: /\b(driv\w*|car|cars|vehicle|motorbike|scooter)\b/i,
+  mrt: /\b(mrt|train|subway|metro|rail|red line|east.west line|\w+ line)\b/i,
+  bus: /\b(bus|buses)\b/i,
+  walk: /\b(walk\w*|on foot|by foot|stroll\w*)\b/i,
+};
+
+/** 时长的词面证据 —— 必须出现时间单位，光有数字不算（"3-bedroom" 也有数字） */
+const DURATION_EVIDENCE =
+  /\b(min|mins|minute|minutes|hour|hours|hr|hrs|half an hour|quarter of an hour)\b/i;
+
+/**
+ * 通勤的**方式**和**时长上限**必须能在用户原话里找到依据。
+ *
+ * 起因是一次真实的编造：用户说 "the children will study around Bukit Timah,
+ * so somewhere close would be great" —— 一个字都没提交通工具和时长，
+ * 系统却抽出了 `by DRIVE, under 20 min`，而且两者都成了硬过滤条件。
+ * 用户完全看不出这个 20 分钟是哪来的，也不知道自己被它挡掉了多少房源。
+ *
+ * 更麻烦的是这个编造是**间歇性的** —— 同一句话复现两次都正常。
+ * 所以不能靠 prompt 里加一句"不要编造"，必须有代码层面的客观检验：
+ * 和地点走闭集是同一个思路，模型可以提议，代码负责核对。
+ *
+ * 「已经存在且没变」的值不需要重新举证 —— 用户上一轮说过的条件会留在状态里，
+ * 这一轮只是重提目的地时，不该把之前说好的时长弄丢。
+ */
+function evidenceFilter(
+  need: CommuteNeed,
+  userText: string,
+  current: CommuteNeed | undefined,
+): { need: CommuteNeed; dropped: Array<{ field: string; value: unknown }> } {
+  const dropped: Array<{ field: string; value: unknown }> = [];
+  const kept: CommuteNeed = { destination: need.destination };
+
+  if (need.mode !== undefined) {
+    const unchanged = current?.mode === need.mode;
+    if (unchanged || MODE_EVIDENCE[need.mode]?.test(userText)) kept.mode = need.mode;
+    else dropped.push({ field: "commute.mode", value: need.mode });
+  }
+
+  if (need.maxMinutes !== undefined) {
+    const unchanged = current?.maxMinutes === need.maxMinutes;
+    if (unchanged || DURATION_EVIDENCE.test(userText)) kept.maxMinutes = need.maxMinutes;
+    else dropped.push({ field: "commute.maxMinutes", value: need.maxMinutes });
+  }
+
+  return { need: kept, dropped };
+}
+
+/**
  * 校验通勤对象。返回 CommuteNeed，或者一句失败原因（进 dropped）。
  *
  * destination 走的是**区域 ∪ 站名 ∪ 邮区的并集**：用户口中的目的地可能是
@@ -353,6 +405,12 @@ export function validatePatch(
   vocab: Vocab,
   /** 当前状态 —— 相对调整（"再便宜点"）要拿它算出具体数值 */
   current: SearchQuery = {},
+  /**
+   * 用户这一轮的原话。用来核对通勤的方式和时长是不是他真说过的 ——
+   * 模型偶尔会凭空补出 "by DRIVE, under 20 min"，而这两个都是硬过滤条件。
+   * 默认空串意味着"无从核对"，此时一律要求举证，宁可丢也不编。
+   */
+  userText = "",
 ): ValidationResult {
   const dropped: ValidationResult["dropped"] = [];
   const patch: StatePatch = {};
@@ -430,7 +488,16 @@ export function validatePatch(
         dropped.push({ slot, value, reason: parsed });
         continue;
       }
-      normalized = parsed;
+      // 目的地过闭集，方式和时长过词面证据 —— 两道都是客观检验，不靠模型自律
+      const checked = evidenceFilter(parsed, userText, current.commute);
+      for (const item of checked.dropped) {
+        dropped.push({
+          slot: item.field,
+          value: item.value,
+          reason: "not stated by the user — no wording in their message supports it",
+        });
+      }
+      normalized = checked.need;
     } else if (Array.isArray(value)) {
       // 闭集数组：逐项归一化，越界项单独丢弃而不是整条丢掉
       const allowed = closedSets[slot];

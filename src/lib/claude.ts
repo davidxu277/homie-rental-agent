@@ -88,9 +88,17 @@ Rules:
      destination = Raffles Place · mode = mrt · maxMinutes = 40
    All three go into commute. **None of them go into stations, areas or maxWalkMinutes.**
 
-   - **commute** — the user names somewhere they travel to, usually with a duration and often a mode:
+   - **commute** — the user names somewhere they travel to:
      "I work near X", "my office is in X", "I study at X", "I need to get to X in under 40 min", "30 minutes by bus to X".
      Put the place in commute.destination, the mode in commute.mode, the tolerance in commute.maxMinutes.
+
+     **mode and maxMinutes are only ever set from words the user actually said.** They are hard filters —
+     inventing them silently excludes listings the user never asked to exclude, and they cannot tell.
+     - No mention of how they travel → leave mode out. Don't assume driving because it's a family,
+       or the MRT because it's Singapore. "The children will study around Bukit Timah" says nothing about transport.
+     - No number and no time unit → leave maxMinutes out. "somewhere close", "nearby", "not too far",
+       "location matters a lot" are **not** durations. Only "20 minutes", "half an hour", "under 40 min" are.
+     - Setting just commute.destination is completely fine and is the common case.
    - **areas / districts / stations** — the user says where they want to **live**:
      "I want to live in Clementi", "anywhere in the east", "near Bedok MRT".
    - **maxWalkMinutes** — only ever "X minutes' **walk** to the MRT / to a station". Never a travel time.
@@ -269,7 +277,7 @@ export async function extractRequirements(options: ExtractOptions): Promise<Extr
 
   // tool_use.input 已经是解析好的对象，不需要 JSON.parse。
   // 传入当前状态，让相对调整（"再便宜点"）能算出具体数值。
-  return { ...validatePatch(call.input, vocab, toSearchQuery(state)), usage };
+  return { ...validatePatch(call.input, vocab, toSearchQuery(state), userText), usage };
 }
 
 // ---------------------------------------------------------------------------
