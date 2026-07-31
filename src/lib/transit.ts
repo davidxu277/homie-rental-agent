@@ -26,18 +26,27 @@ const ORIGINS_PER_REQUEST = 25;
 const TIMEOUT_MS = 8_000;
 
 /**
- * 查行程时间用的出发时刻：下一个工作日早上 9 点。
+ * 查行程时间用的出发时刻：下一个工作日**新加坡时间**早上 9 点。
  *
  * 公交行程时间随时刻变化（末班车、班次密度），必须固定一个参考时刻，
- * 否则同一套房在深夜和早高峰查出来的结果不同，推荐就不可复现了。
+ * 否则同一套房深夜查和早高峰查结果不同，推荐就不可复现了。
  * 选通勤高峰是因为用户问的就是上班通勤。
+ *
+ * **必须显式用新加坡时区**，不能用 setHours。踩过：开发机在 PDT，
+ * "明天 9 点" 算出来是新加坡周日凌晨 0 点，Google 只能等首班车，
+ * Pasir Ris → Raffles Place 查出 5 小时 10 分钟。部署到 Vercel（UTC）
+ * 则会变成新加坡下午 5 点晚高峰 —— 两种都是错的，而且错得很隐蔽：
+ * 返回的是合法数字，只是答的不是同一个问题。
+ *
+ * 新加坡是 UTC+8 且不实行夏令时，所以 09:00 SGT 恒等于 01:00 UTC 同一天，
+ * 全程用 UTC 方法即可，不需要时区库。
  */
-function departureTime(now = new Date()): number {
+export function departureTime(now = new Date()): number {
   const d = new Date(now);
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  // 落在周末就推到周一
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  d.setUTCDate(d.getUTCDate() + 1);
+  d.setUTCHours(1, 0, 0, 0); // = 09:00 Asia/Singapore
+  // 01:00 UTC 和 09:00 SGT 是同一个日历日，所以这里的星期几就是新加坡的星期几
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() + 1);
   return Math.floor(d.getTime() / 1000);
 }
 

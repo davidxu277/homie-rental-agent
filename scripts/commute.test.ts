@@ -13,6 +13,7 @@ import { describe, it } from "node:test";
 
 import { applyCommuteFilter } from "../src/lib/commute.ts";
 import type { ScoredListing, SearchResult } from "../src/lib/search.ts";
+import { departureTime } from "../src/lib/transit.ts";
 import type { TransitLookup, TransitProvider } from "../src/lib/transit.ts";
 
 function listing(id: string, station: string | null, walkMinutes = 5): ScoredListing {
@@ -153,5 +154,55 @@ describe("通勤过滤", () => {
       NEVER_CALLED,
     );
     assert.equal(out.hits.length, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * 出发时刻的时区。
+ *
+ * 这个 bug 错得极其隐蔽：API 照常返回合法数字，只是答的不是同一个问题。
+ * 实际踩到的两种错法 ——
+ *   开发机 PDT：setHours(9) 算出新加坡周日凌晨 0 点，只能等首班车，
+ *              Pasir Ris → Raffles Place 查出 5 小时 10 分钟（真实约 45 分钟）
+ *   Vercel UTC：算出新加坡下午 5 点晚高峰
+ * 两种都不是"工作日早上 9 点通勤"。
+ */
+describe("出发时刻固定在新加坡工作日早高峰", () => {
+  const sgHour = (ts: number) =>
+    Number(
+      new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Singapore",
+        hour: "2-digit",
+        hour12: false,
+      }).format(new Date(ts * 1000)),
+    );
+  const sgWeekday = (ts: number) =>
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Singapore",
+      weekday: "short",
+    }).format(new Date(ts * 1000));
+
+  it("无论服务器在哪个时区，都是新加坡时间 09:00", () => {
+    // 覆盖一整年的各个日期，任何一天算出来都必须是 SGT 09:00
+    for (let day = 0; day < 365; day += 7) {
+      const now = new Date(Date.UTC(2026, 0, 1 + day, 17, 30));
+      const ts = departureTime(now);
+      assert.equal(sgHour(ts), 9, `${now.toISOString()} 算出的不是 SGT 09:00`);
+    }
+  });
+
+  it("永远落在工作日", () => {
+    for (let day = 0; day < 30; day += 1) {
+      const ts = departureTime(new Date(Date.UTC(2026, 6, 1 + day, 3, 0)));
+      const weekday = sgWeekday(ts);
+      assert.ok(weekday !== "Sat" && weekday !== "Sun", `落到了 ${weekday}`);
+    }
+  });
+
+  it("永远是将来的时刻 —— transit 模式不接受过去的出发时间", () => {
+    const now = new Date();
+    assert.ok(departureTime(now) > Math.floor(now.getTime() / 1000));
   });
 });
