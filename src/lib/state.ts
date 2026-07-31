@@ -10,7 +10,7 @@
  */
 
 import type { CleanListing } from "./types.ts";
-import { searchListings, type SearchQuery } from "./search.ts";
+import { searchListings, type CommuteNeed, type SearchQuery } from "./search.ts";
 
 export type SlotKey = keyof SearchQuery;
 
@@ -71,10 +71,21 @@ export type StateChange = {
   description: string;
 };
 
+export function renderCommute(c: CommuteNeed): string {
+  const parts = [`to ${c.destination}`];
+  if (c.mode) parts.push(`by ${c.mode.toUpperCase()}`);
+  if (c.maxMinutes !== undefined) parts.push(`under ${c.maxMinutes} min`);
+  return parts.join(", ");
+}
+
 function render(value: unknown): string {
   if (value === undefined || value === null) return "not set";
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "boolean") return value ? "yes" : "no";
+  // commute 是唯一的对象型槽位，String() 会变成 [object Object]
+  if (typeof value === "object" && "destination" in (value as object)) {
+    return renderCommute(value as CommuteNeed);
+  }
   return String(value);
 }
 
@@ -90,6 +101,7 @@ const SLOT_LABELS: Partial<Record<SlotKey, string>> = {
   districts: "Districts",
   stations: "MRT stations",
   maxWalkMinutes: "Walk to MRT",
+  commute: "Commute",
   furnishing: "Furnishing",
   requireCooking: "Cooking allowed",
   requirePet: "Pet-friendly",
@@ -259,8 +271,15 @@ export function slotsChangedOnTurn(state: RequirementState, turn: number): SlotK
  */
 const MIN_CONSTRAINTS_TO_SEARCH = 2;
 
-/** 不参与"够不够筛选"计数：它们是保护性/展示性字段，不构成用户的找房需求 */
-const NON_NARROWING_SLOTS = new Set<SlotKey>(["tenantGender", "tenantNationality"]);
+/**
+ * 不参与"够不够筛选"计数。
+ *
+ * tenantGender / tenantNationality 是保护性、展示性字段；
+ * commute 则是**记录了但筛不了**（数据没有站间行程时间）——
+ * 把它算进约束数，会让"我在 X 上班，40 分钟内"这种话看起来提供了两条约束，
+ * 系统于是直接去检索，实际上一条有效条件都没有。
+ */
+const NON_NARROWING_SLOTS = new Set<SlotKey>(["tenantGender", "tenantNationality", "commute"]);
 
 /** 状态里有几条真正能用来筛选的约束 */
 export function constraintCount(state: RequirementState): number {

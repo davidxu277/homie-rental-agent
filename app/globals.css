@@ -405,6 +405,12 @@ textarea {
   padding: 0 4px;
 }
 
+.pin.unfiltered {
+  color: var(--warn);
+  border-color: var(--warn-soft);
+  background: var(--warn-soft);
+}
+
 .side .none {
   font-size: 13px;
   color: var(--mute);

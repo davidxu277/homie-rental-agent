@@ -20,6 +20,23 @@ import type { CleanListing, Furnishing, ListingType, PropertyType } from "./type
 // 查询
 // ---------------------------------------------------------------------------
 
+/**
+ * 用户要**去**的地方，以及他愿意花多久。
+ *
+ * 和 areas / stations 的区别是根本性的：那两个说的是"房子在哪"，
+ * 这个说的是"你每天要去哪"。"I work near Raffles Place, under 40 min by MRT"
+ * 里三个成分（目的地 / 方式 / 容忍度）在住址型槽位里一个都放不下 ——
+ * 硬塞的结果是把目的地当成住址锚点，反而把一个几乎不排除任何东西的要求
+ * 变成了整个查询里最紧的一条。
+ */
+export type CommuteNeed = {
+  /** 目的地，取自闭集（区域名或站名） */
+  destination: string;
+  mode?: "mrt" | "bus" | "walk" | "drive";
+  /** 用户愿意接受的单程分钟数 */
+  maxMinutes?: number;
+};
+
 export type SearchQuery = {
   /** 月租上限（含）。超出即排除 —— 预算是租房里最典型的硬约束 */
   budgetMax?: number;
@@ -39,8 +56,28 @@ export type SearchQuery = {
   districts?: string[];
   stations?: string[];
 
-  /** 到最近地铁站的步行分钟上限。站点信息缺失时不参与筛选 */
+  /**
+   * 到最近地铁站的**步行**分钟上限。站点信息缺失时不参与筛选。
+   *
+   * 只对应"走 X 分钟能到地铁"这一种说法。"坐地铁 X 分钟到某地"是通勤，
+   * 归 commute —— 早先两者混用过，40 分钟的通勤容忍度被写进这里，
+   * 结果是 494 套全部通过（等于空转），真正清零结果的是被同时写进
+   * stations 的目的地。
+   */
   maxWalkMinutes?: number;
+
+  /**
+   * 通勤需求。**不参与筛选，也不参与打分。**
+   *
+   * 数据里 nearestMrt 只有 station / line / walkMinutes，没有任何站间行程时间，
+   * 所以"坐地铁 40 分钟到 Raffles Place"在这份数据上不可计算。同线与否不能当代理：
+   * EWL 上的 Pasir Ris 离 CBD 很远，DTL 上隔三站的地方反而近 ——
+   * 那种启发式会产出"看着有依据其实是错的"推荐，比不筛更糟。
+   *
+   * 记下来有三个用处：不再被硬塞进住址槽位、侧栏能如实展示、
+   * agent 能明说这条做不到。将来接入行程时间数据，它直接变成过滤器。
+   */
+  commute?: CommuteNeed;
 
   furnishing?: Furnishing[];
   requireCooking?: boolean;

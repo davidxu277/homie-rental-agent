@@ -21,6 +21,7 @@ import {
   emptyState,
   needsClarification,
   pinnedSlots,
+  renderCommute,
   slotsChangedOnTurn,
   toSearchQuery,
   unconfirmedSlots,
@@ -360,5 +361,41 @@ describe("变更可复述", () => {
     const { changes } = applyPatch(emptyState(), { maxLeaseMinMonths: { value: 6 } });
     assert.ok(!changes[0].description.includes("maxLeaseMinMonths"));
     assert.ok(changes[0].description.includes("Longest lease"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe("通勤：记得住，但不算约束", () => {
+  it("不计入'够不够检索'的约束数 —— 它筛不了任何东西", () => {
+    const { state } = applyPatch(emptyState(), {
+      commute: { value: { destination: "Clementi", mode: "mrt", maxMinutes: 40 } },
+    });
+    assert.equal(constraintCount(state), 0, "通勤不该让系统以为已经有条件可以检索了");
+    assert.ok(needsClarification(state), "只说了通勤，仍然需要追问");
+  });
+
+  it("加上一条真约束后，通勤仍然不参与计数", () => {
+    const { state } = applyPatch(emptyState(), {
+      commute: { value: { destination: "Clementi", maxMinutes: 40 } },
+      budgetMax: { value: 900 },
+    });
+    assert.equal(constraintCount(state), 1);
+  });
+
+  it("变更说明是人话，不是 JSON", () => {
+    const { changes } = applyPatch(emptyState(), {
+      commute: { value: { destination: "Clementi", mode: "mrt", maxMinutes: 40 } },
+    });
+    assert.ok(changes[0].description.includes("Clementi"));
+    assert.ok(!changes[0].description.includes("{"), `不该出现原始对象：${changes[0].description}`);
+  });
+
+  it("renderCommute 三个字段都缺时也不崩", () => {
+    assert.equal(renderCommute({ destination: "Dover" }), "to Dover");
+    assert.equal(
+      renderCommute({ destination: "Dover", mode: "bus", maxMinutes: 25 }),
+      "to Dover, by BUS, under 25 min",
+    );
   });
 });

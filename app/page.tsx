@@ -3,7 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { Conversation, TurnResult } from "../src/lib/agent.ts";
-import { emptyState, slotLabel, toSearchQuery, type SlotKey } from "../src/lib/state.ts";
+import {
+  emptyState,
+  renderCommute,
+  slotLabel,
+  toSearchQuery,
+  type SlotKey,
+} from "../src/lib/state.ts";
+import type { CommuteNeed } from "../src/lib/search.ts";
 import type { ScoredListing } from "../src/lib/search.ts";
 
 type Turn = {
@@ -24,6 +31,10 @@ function renderValue(value: unknown): string {
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "boolean") return value ? "yes" : "no";
   if (typeof value === "number") return value.toLocaleString();
+  // commute 是唯一的对象型槽位
+  if (value !== null && typeof value === "object" && "destination" in value) {
+    return renderCommute(value as CommuteNeed);
+  }
   return String(value);
 }
 
@@ -176,6 +187,13 @@ export default function Page() {
               <div className="slot" key={slot}>
                 <span className="k">{slotLabel(slot)}</span>
                 {conversation.state.meta[slot]?.pinned && <span className="pin">must</span>}
+                {/* 通勤记下来了但筛不了（数据没有站间行程时间）—— 必须让用户看见这个区别，
+                    否则他会以为结果已经按通勤过滤过了 */}
+                {slot === "commute" && (
+                  <span className="pin unfiltered" title="No journey-time data, so this isn't used as a filter">
+                    not filtered
+                  </span>
+                )}
                 <span className="v">{renderValue(value)}</span>
                 {/* 点 × 不是偷偷改状态，而是替用户说一句话 —— 走同一条抽取管线，
                     对话记录里也留得下痕迹，用户看到的和系统做的始终一致 */}

@@ -13,7 +13,7 @@
  * 否定），漏了照样得调，不如一开始就调。真正干活的是下面的 validatePatch。
  */
 
-import { NOTCH_STEP, type SearchQuery } from "./search.ts";
+import { NOTCH_STEP, type CommuteNeed, type SearchQuery } from "./search.ts";
 import type { SlotKey, StatePatch } from "./state.ts";
 import { canonicalize, type Vocab } from "./vocab.ts";
 
@@ -72,6 +72,8 @@ export type ExtractedPatch = {
     directOwnerOnly: boolean;
     amenities: string[];
     tenantGender: string;
+    /** 要去的地方（上班/上学），不是想住的地方 —— 见 CommuteNeed 的注释 */
+    commute: { destination: string; mode?: string; maxMinutes?: number };
   }>;
   /** 用户明确取消的约束 */
   clear?: string[];
@@ -117,6 +119,46 @@ export type ExtractedPatch = {
 // 注意：这里没有 tenantNationality。
 // 模型在 schema 层面就无法产出国籍偏好 —— 和检索层没有国籍过滤器是同一个决定，
 // 只是把防线又往前推了一层：不是"不用"，是"表达不出来"。
+
+const COMMUTE_MODES = ["mrt", "bus", "walk", "drive"];
+
+/**
+ * 校验通勤对象。返回 CommuteNeed，或者一句失败原因（进 dropped）。
+ *
+ * destination 走的是**区域 ∪ 站名 ∪ 邮区的并集**：用户口中的目的地可能是
+ * 公司所在的片区（"Raffles Place"）、也可能是个地铁站名，两者在这份数据里
+ * 本来就大量重名。落不进闭集就整条丢掉 —— 一个编造的目的地比没有目的地更糟，
+ * 它会显示在侧栏上，让用户以为系统听懂了。
+ */
+function parseCommute(value: unknown, vocab: Vocab): CommuteNeed | string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "commute is not an object";
+  }
+  const raw = value as Record<string, unknown>;
+
+  if (typeof raw.destination !== "string") return "commute.destination is missing";
+  const places = [...vocab.areas, ...vocab.stations, ...vocab.districts];
+  const destination = canonicalize(raw.destination, places);
+  if (destination === null) return "commute.destination is not in the closed vocabulary";
+
+  const need: CommuteNeed = { destination };
+
+  if (raw.mode !== undefined) {
+    const mode = typeof raw.mode === "string" ? raw.mode.toLowerCase() : null;
+    // 方式认不出就只丢这个字段，目的地仍然保留 —— 部分信息比零信息有用
+    if (mode !== null && COMMUTE_MODES.includes(mode)) {
+      need.mode = mode as CommuteNeed["mode"];
+    }
+  }
+
+  if (raw.maxMinutes !== undefined) {
+    if (typeof raw.maxMinutes === "number" && Number.isFinite(raw.maxMinutes) && raw.maxMinutes > 0) {
+      need.maxMinutes = raw.maxMinutes;
+    }
+  }
+
+  return need;
+}
 
 const PROPERTY_TYPES = ["HDB", "Condominium", "Landed", "Serviced Apartment"];
 const FURNISHING = ["fully", "partial", "unfurnished"];
@@ -164,6 +206,7 @@ export const EXTRACTABLE_SLOTS: SlotKey[] = [
   "directOwnerOnly",
   "amenities",
   "tenantGender",
+  "commute",
 ];
 
 // ---------------------------------------------------------------------------
@@ -220,6 +263,16 @@ export function buildPatchSchema(_vocab: Vocab): Record<string, unknown> {
           directOwnerOnly: bool,
           amenities: stringArray,
           tenantGender: { type: "string", enum: GENDERS },
+          commute: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              destination: { type: "string" },
+              mode: { type: "string", enum: COMMUTE_MODES },
+              maxMinutes: num,
+            },
+            required: ["destination"],
+          },
         },
       },
       clear: stringArray,
@@ -371,6 +424,13 @@ export function validatePatch(
         dropped.push({ slot, value, reason: "not a YYYY-MM-DD date" });
         continue;
       }
+    } else if (slot === "commute") {
+      const parsed = parseCommute(value, vocab);
+      if (typeof parsed === "string") {
+        dropped.push({ slot, value, reason: parsed });
+        continue;
+      }
+      normalized = parsed;
     } else if (Array.isArray(value)) {
       // 闭集数组：逐项归一化，越界项单独丢弃而不是整条丢掉
       const allowed = closedSets[slot];

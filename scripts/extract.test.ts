@@ -366,3 +366,82 @@ describe("schema 的两个硬约束", () => {
     assert.deepEqual(set.furnishing.items?.enum, ["fully", "partial", "unfurnished"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+/**
+ * 通勤 ≠ 住址。
+ *
+ * 起因是一次真实失败："I work near Raffles Place so somewhere I can get to the CBD
+ * in under 40 min by MRT" 被抽成了 maxWalkMinutes=40 + stations=[Raffles Place]。
+ * 前者在 494 套上全部通过（等于空转），后者把结果直接清零 ——
+ * 一个几乎不排除任何东西的要求，变成了整个查询里最紧的一条。
+ *
+ * 根因不是模型笨，是槽位表里没有"目的地"这个概念，它无处可放。
+ */
+describe("通勤目的地是独立槽位", () => {
+  it("目的地落进 commute，不污染住址槽位", () => {
+    const { patch, dropped } = run({
+      set: { commute: { destination: "Buona Vista", mode: "mrt", maxMinutes: 40 } },
+    });
+    assert.deepEqual(patch.commute?.value, {
+      destination: "Buona Vista",
+      mode: "mrt",
+      maxMinutes: 40,
+    });
+    assert.equal(patch.stations, undefined, "目的地不该写进 stations");
+    assert.equal(patch.maxWalkMinutes, undefined, "通勤时间不该写进步行时间");
+    assert.equal(dropped.length, 0);
+  });
+
+  it("目的地也走闭集校验，编造的地名整条丢弃", () => {
+    const { patch, dropped } = run({
+      set: { commute: { destination: "Atlantis", maxMinutes: 30 } },
+    });
+    assert.equal(patch.commute, undefined);
+    assert.ok(dropped.some((d) => d.reason.includes("closed vocabulary")));
+  });
+
+  it("站名和区域名都能当目的地", () => {
+    assert.equal(
+      (run({ set: { commute: { destination: "Clementi" } } }).patch.commute?.value as
+        { destination: string }).destination,
+      "Clementi",
+    );
+    assert.equal(
+      (run({ set: { commute: { destination: "dover" } } }).patch.commute?.value as
+        { destination: string }).destination,
+      "Dover",
+      "应当大小写归一",
+    );
+  });
+
+  it("方式认不出时只丢方式，目的地保留 —— 部分信息比零信息有用", () => {
+    const value = run({
+      set: { commute: { destination: "Clementi", mode: "teleport", maxMinutes: 20 } },
+    }).patch.commute?.value as { destination: string; mode?: string; maxMinutes?: number };
+    assert.equal(value.destination, "Clementi");
+    assert.equal(value.mode, undefined);
+    assert.equal(value.maxMinutes, 20);
+  });
+
+  it("非法的分钟数被忽略，不影响其余字段", () => {
+    const value = run({
+      set: { commute: { destination: "Clementi", maxMinutes: -5 } },
+    }).patch.commute?.value as { destination: string; maxMinutes?: number };
+    assert.equal(value.destination, "Clementi");
+    assert.equal(value.maxMinutes, undefined);
+  });
+
+  it("不是对象就丢弃", () => {
+    const { patch, dropped } = run({
+      set: { commute: "Raffles Place" as unknown as { destination: string } },
+    });
+    assert.equal(patch.commute, undefined);
+    assert.ok(dropped.length > 0);
+  });
+
+  it("commute 在合法槽位清单里", () => {
+    assert.ok(EXTRACTABLE_SLOTS.includes("commute"));
+  });
+});
