@@ -66,6 +66,20 @@ function destinationQuery(destination: string): string {
   return /singapore/i.test(destination) ? destination : `${destination}, Singapore`;
 }
 
+/**
+ * 我们的出行方式 → Google 的 mode 参数。
+ *
+ * bus 和 mrt 都映射到 transit：Google 的 transit 模式本来就同时考虑地铁和巴士，
+ * 它会给出综合最优方案。硬要只走巴士得用 transit_mode 参数，但用户说"坐巴士"
+ * 通常只是在说"我不开车"，不是在指定必须全程巴士。
+ */
+const GOOGLE_MODE: Record<string, string> = {
+  mrt: "transit",
+  bus: "transit",
+  walk: "walking",
+  drive: "driving",
+};
+
 export type TransitLookup = {
   /** 站名 → 到目的地的分钟数。查不到的站不出现在这里 */
   minutes: Map<string, number>;
@@ -76,7 +90,7 @@ export type TransitLookup = {
 };
 
 export interface TransitProvider {
-  lookup(stations: string[], destination: string): Promise<TransitLookup>;
+  lookup(stations: string[], destination: string, mode?: string): Promise<TransitLookup>;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,15 +100,25 @@ type MatrixResponse = {
   error_message?: string;
   origin_addresses?: string[];
   destination_addresses?: string[];
-  rows?: Array<{ elements: Array<{ status: string; duration?: { value: number } }> }>;
+  rows?: Array<{
+    elements: Array<{
+      status: string;
+      duration?: { value: number };
+      /** 仅驾车模式返回，考虑了实时路况 */
+      duration_in_traffic?: { value: number };
+    }>;
+  }>;
 };
 
 /**
  * Google Distance Matrix 实现。
  *
- * 缓存键是 `站名|目的地`，跨对话、跨用户共享 —— 站点和目的地都是稳定实体，
+ * 缓存键是 `站名|目的地|出行方式`，跨对话、跨用户共享 —— 三者都是稳定实体，
  * 行程时间在参考时刻固定的前提下也是稳定的。进程内缓存即可：
  * Vercel 冷启动会丢，但代价只是重新查一次，不影响正确性。
+ *
+ * **出行方式必须进缓存键**：同一个目的地开车 15 分钟、地铁 40 分钟，
+ * 键里不带 mode 的话两者会互相覆盖，用户问开车却拿到地铁的数。
  */
 export class GoogleTransitProvider implements TransitProvider {
   private cache = new Map<string, number>();
@@ -109,15 +133,22 @@ export class GoogleTransitProvider implements TransitProvider {
     this.apiKey = apiKey;
   }
 
-  async lookup(stations: string[], destination: string): Promise<TransitLookup> {
+  async lookup(
+    stations: string[],
+    destination: string,
+    mode?: string,
+  ): Promise<TransitLookup> {
+    // 用户没说怎么去就按公共交通算 —— 新加坡租房场景下这是默认假设
+    const googleMode = GOOGLE_MODE[mode ?? "mrt"] ?? "transit";
     const minutes = new Map<string, number>();
+
     if (this.unresolvable.has(destination)) {
       return { minutes, resolved: false, error: "destination could not be resolved" };
     }
 
     const missing: string[] = [];
     for (const station of stations) {
-      const cached = this.cache.get(`${station}|${destination}`);
+      const cached = this.cache.get(`${station}|${destination}|${googleMode}`);
       if (cached === undefined) missing.push(station);
       else minutes.set(station, cached);
     }
@@ -135,7 +166,7 @@ export class GoogleTransitProvider implements TransitProvider {
 
     // 并发发出去 —— 4 个请求串行是 4 倍延迟，没有理由
     const results = await Promise.all(
-      batches.map((batch) => this.fetchBatch(batch, destination, depart)),
+      batches.map((batch) => this.fetchBatch(batch, destination, depart, googleMode)),
     );
 
     for (const [index, result] of results.entries()) {
@@ -148,7 +179,7 @@ export class GoogleTransitProvider implements TransitProvider {
         if (seconds === null) continue;
         const station = batches[index][offset];
         const value = Math.round(seconds / 60);
-        this.cache.set(`${station}|${destination}`, value);
+        this.cache.set(`${station}|${destination}|${googleMode}`, value);
         minutes.set(station, value);
       }
     }
@@ -166,13 +197,16 @@ export class GoogleTransitProvider implements TransitProvider {
     stations: string[],
     destination: string,
     depart: number,
+    mode: string,
   ): Promise<{ durations: Array<number | null> } | { error: string }> {
     const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
     url.searchParams.set("origins", stations.map(originQuery).join("|"));
     url.searchParams.set("destinations", destinationQuery(destination));
-    url.searchParams.set("mode", "transit");
-    url.searchParams.set("departure_time", String(depart));
+    url.searchParams.set("mode", mode);
     url.searchParams.set("key", this.apiKey);
+    // departure_time 只对公交（班次）和驾车（路况）有意义；
+    // 步行/骑行传了会被忽略，但传着也无害，统一带上省一个分支
+    url.searchParams.set("departure_time", String(depart));
 
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
@@ -187,9 +221,10 @@ export class GoogleTransitProvider implements TransitProvider {
       return {
         durations: (body.rows ?? []).map((row) => {
           const element = row.elements?.[0];
-          return element?.status === "OK" && element.duration
-            ? element.duration.value
-            : null;
+          if (element?.status !== "OK") return null;
+          // 驾车模式下 Google 会额外给出考虑实时路况的耗时 —— 那个才是用户
+          // 真正会花的时间。新加坡高峰期两者能差出十几分钟
+          return element.duration_in_traffic?.value ?? element.duration?.value ?? null;
         }),
       };
     } catch (cause) {

@@ -71,6 +71,8 @@ export const NO_COMMUTE: CommuteOutcome = {
 
 export type CommuteNeedInput = {
   destination: string;
+  /** mrt / bus / walk / drive —— 决定按哪种方式算耗时，缺省按公共交通 */
+  mode?: string;
   maxMinutes?: number;
 };
 
@@ -102,7 +104,7 @@ export async function applyCommuteFilter(
   ];
   if (stations.length === 0) return passthrough;
 
-  const lookup = await provider.lookup(stations, need.destination);
+  const lookup = await provider.lookup(stations, need.destination, need.mode);
 
   if (!lookup.resolved) {
     // 外部服务不可用或目的地解析不出来 —— 退回接入前的行为：不筛，并明说。
@@ -128,7 +130,11 @@ export async function applyCommuteFilter(
       continue;
     }
 
-    const doorToDoor = mrt.walkMinutes + ride;
+    // 步行到站那一段**只对公共交通成立** —— 开车的人不会先走 5 分钟到地铁站
+    // 再上车。数据里没有门牌号，最近的地铁站是我们对"房子在哪"唯一的近似，
+    // 所以驾车/步行模式下直接用该站到目的地的耗时，不再叠加步行段。
+    const usesStation = need.mode === undefined || need.mode === "mrt" || need.mode === "bus";
+    const doorToDoor = usesStation ? mrt.walkMinutes + ride : ride;
     minutes.set(hit.listing.id, doorToDoor);
 
     if (need.maxMinutes === undefined || doorToDoor <= need.maxMinutes) {

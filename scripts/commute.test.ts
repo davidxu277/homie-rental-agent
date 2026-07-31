@@ -326,3 +326,61 @@ describe("放宽推演算上通勤", () => {
     assert.deepEqual(b, a);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+/**
+ * 出行方式必须一路传到底。
+ *
+ * 实测的差距足以决定成败：Bedok → Bukit Timah 地铁 65 分钟、开车 22 分钟。
+ * 用户说"开车 20 分钟内"，拿地铁时间去筛就是把几乎所有房源误杀。
+ */
+describe("出行方式", () => {
+  function recordingProvider() {
+    const calls: Array<string | undefined> = [];
+    const provider: TransitProvider = {
+      async lookup(_stations, _destination, mode) {
+        calls.push(mode);
+        return { minutes: new Map([["Near", 10]]), resolved: true };
+      },
+    };
+    return { provider, calls };
+  }
+
+  it("mode 传给 provider，不是写死 transit", async () => {
+    const { provider, calls } = recordingProvider();
+    await applyCommuteFilter(
+      result([listing("A", "Near", 5)]),
+      { destination: "Bukit Timah", mode: "drive", maxMinutes: 20 },
+      provider,
+    );
+    assert.deepEqual(calls, ["drive"]);
+  });
+
+  it("公共交通要加上步行到站的时间", async () => {
+    const out = await applyCommuteFilter(
+      result([listing("A", "Near", 5)]),
+      { destination: "X", mode: "mrt", maxMinutes: 60 },
+      stub({ Near: 10 }),
+    );
+    assert.equal(out.commute.minutes.get("A"), 15, "5 分钟步行 + 10 分钟车程");
+  });
+
+  it("没说方式时按公共交通算", async () => {
+    const out = await applyCommuteFilter(
+      result([listing("A", "Near", 5)]),
+      { destination: "X", maxMinutes: 60 },
+      stub({ Near: 10 }),
+    );
+    assert.equal(out.commute.minutes.get("A"), 15);
+  });
+
+  it("开车不加步行到站 —— 没人先走到地铁站再开车", async () => {
+    const out = await applyCommuteFilter(
+      result([listing("A", "Near", 5)]),
+      { destination: "X", mode: "drive", maxMinutes: 60 },
+      stub({ Near: 10 }),
+    );
+    assert.equal(out.commute.minutes.get("A"), 10, "只算车程，不叠加步行段");
+  });
+});
