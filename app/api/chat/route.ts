@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error: overloaded
-          ? "The model service is busy right now — give it a moment and try again."
+          ? "Anthropic's API is at capacity right now. This is on their side, not your request — retrying usually works."
           : (anyError.message ?? "Something went wrong."),
         requestId: anyError.requestID,
       },

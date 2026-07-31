@@ -53,13 +53,22 @@ export default function Page() {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
   }, [turns, busy]);
 
-  async function send(text: string) {
+  /**
+   * @param retryOf 重试第几轮。失败的那一轮原地复活，而不是在末尾再追加一条
+   *   —— 用户没有重新说话，对话记录里就不该出现第二条同样的话。
+   */
+  async function send(text: string, retryOf?: number) {
     const userText = text.trim();
     if (!userText || busy) return;
 
-    setDraft("");
     setBusy(true);
-    setTurns((prev) => [...prev, { user: userText }]);
+    if (retryOf === undefined) {
+      setDraft("");
+      setTurns((prev) => [...prev, { user: userText }]);
+    } else {
+      setTurns((prev) => prev.map((t, i) => (i === retryOf ? { user: t.user } : t)));
+    }
+    const index = retryOf ?? turns.length;
 
     try {
       const response = await fetch("/api/chat", {
@@ -70,22 +79,18 @@ export default function Page() {
       const data = (await response.json()) as TurnResult & { error?: string };
 
       if (!response.ok || data.error) {
-        setTurns((prev) =>
-          prev.map((t, i) => (i === prev.length - 1 ? { ...t, error: data.error } : t)),
-        );
+        setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, error: data.error } : t)));
         return;
       }
 
       setConversation(data.conversation);
       setTurns((prev) =>
-        prev.map((t, i) =>
-          i === prev.length - 1 ? { ...t, reply: data.reply, hits: data.hits } : t,
-        ),
+        prev.map((t, i) => (i === index ? { ...t, reply: data.reply, hits: data.hits } : t)),
       );
     } catch {
       setTurns((prev) =>
         prev.map((t, i) =>
-          i === prev.length - 1 ? { ...t, error: "Request failed — please try again." } : t,
+          i === index ? { ...t, error: "Request failed — please try again." } : t,
         ),
       );
     } finally {
@@ -127,7 +132,13 @@ export default function Page() {
 
               {turn.error && (
                 <div className="turn agent">
-                  <div className="error">{turn.error}</div>
+                  <div className="error">
+                    {turn.error}
+                    {/* 过载是瞬时的，重打一遍是纯粹的浪费 —— 原话还在，一键重发 */}
+                    <button type="button" disabled={busy} onClick={() => send(turn.user, index)}>
+                      Retry
+                    </button>
+                  </div>
                 </div>
               )}
 

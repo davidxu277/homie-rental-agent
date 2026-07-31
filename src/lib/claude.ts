@@ -32,9 +32,37 @@ export function createClient(): Anthropic {
       "ANTHROPIC_API_KEY is not set. Locally: copy .env.example to .env.local and fill it in. On Vercel: add it under Settings → Environment Variables, then redeploy.",
     );
   }
-  // SDK 默认重试 2 次（429 / 5xx / 529 / 连接错误，指数退避）。
-  // 调到 4 次：对话是交互式的，一次 529 过载让用户看到报错比多等两秒糟糕得多。
-  return new Anthropic({ maxRetries: 4 });
+  // SDK 自己会重试（429 / 5xx / 529 / 连接错误，指数退避），但退避很快 ——
+  // 实测 4 次重试 9 秒内就烧完了。它擅长处理毫秒级抖动，对付持续几分钟的
+  // 容量过载没有用。所以这里只留 2 次兜抖动，真正的耐心放在 withOverloadRetry。
+  return new Anthropic({ maxRetries: 2 });
+}
+
+/**
+ * 过载重试的等待时间。
+ *
+ * 529 是**容量信号**，不是我们的请求有问题 —— 唯一有效的应对就是等久一点。
+ * 实测同一个请求连续 529 六次、间隔几分钟后自行恢复，SDK 那种秒级退避完全够不着。
+ *
+ * 总额 3+8=11 秒，加上两次完整尝试仍在路由的 maxDuration=60s 以内。
+ * 再长就不该由服务端硬扛了 —— 让用户点"重试"，那没有超时限制。
+ */
+const OVERLOAD_WAITS_MS = [3_000, 8_000];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** 过载/限流时多等几轮。其他错误（400 之类）立刻抛出 —— 那些重试多少次都一样 */
+async function withOverloadRetry<T>(call: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      const worthWaiting = status === 429 || status === 529 || status === 503;
+      if (!worthWaiting || attempt >= OVERLOAD_WAITS_MS.length) throw error;
+      await sleep(OVERLOAD_WAITS_MS[attempt]);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +185,7 @@ export async function extractRequirements(options: ExtractOptions): Promise<Extr
   const { client, state, userText, vocab } = options;
   const today = options.today ?? "2026-07-28";
 
-  const response = await client.messages.create({
+  const response = await withOverloadRetry(() => client.messages.create({
     model: MODEL,
     max_tokens: 2000,
     // 抽取要快且便宜：关掉 thinking，effort 拉到最低。
@@ -212,7 +240,7 @@ export async function extractRequirements(options: ExtractOptions): Promise<Extr
         ],
       },
     ],
-  });
+  }));
 
   const usage = {
     input: response.usage.input_tokens,
@@ -468,7 +496,7 @@ export async function generateReply(options: ReplyOptions): Promise<ReplyOutcome
   const { client, situation, state, userText, hits, total, pool } = options;
   const cards = hits.map((hit, index) => toCard(hit, index + 1));
 
-  const response = await client.messages.create({
+  const response = await withOverloadRetry(() => client.messages.create({
     model: MODEL,
     max_tokens: 1500,
     // 回复要有判断力（取舍怎么讲、哪些 caveat 值得说），开 adaptive thinking。
@@ -511,7 +539,7 @@ export async function generateReply(options: ReplyOptions): Promise<ReplyOutcome
         ],
       },
     ],
-  });
+  }));
 
   const text = response.content
     .filter((block) => block.type === "text")
