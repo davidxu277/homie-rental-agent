@@ -1,0 +1,29 @@
+{
+  "sessionId": "session-01-budget-intern",
+  "title": "Budget-conscious intern, common room",
+  "difficulty": "easy",
+  "persona": "Wei, 22, a summer intern at a bank in Raffles Place. First time renting alone, on a tight stipend.",
+  "situation": "Knows exactly what she wants: a cheap common room with a short-ish commute to the CBD.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "Hi, I'm looking for a room to rent. My budget is around $900 a month."
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "A common room is fine. I work near Raffles Place so somewhere I can get to the CBD in under 40 min by MRT."
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "I'd prefer a female-only unit and I don't cook much. Available from September."
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "Can you show me a few options and tell me which one you'd pick?"
+    }
+  ]
+}

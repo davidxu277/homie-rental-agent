@@ -1,0 +1,29 @@
+{
+  "sessionId": "session-04-nus-student-commute",
+  "title": "NUS student, strict commute + tight budget",
+  "difficulty": "medium",
+  "persona": "Rahul, 20, undergrad at NUS (Kent Ridge). Lives on a scholarship budget.",
+  "situation": "Hard constraint on commute time to NUS, but his budget is low for the areas near campus.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "I need a room near NUS. I must be able to reach Kent Ridge within 30 minutes."
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "My budget is $850. Common room is fine."
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "Hmm, everything near campus looks more expensive than that. What are my options?"
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "If I stretch to $1000, does that open up much more? What would you recommend I do?"
+    }
+  ]
+}

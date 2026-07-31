@@ -1,0 +1,39 @@
+{
+  "sessionId": "session-07-listing-followup",
+  "title": "Deep follow-up questions on a specific listing",
+  "difficulty": "medium",
+  "persona": "Priya, 27, methodical, already narrowing down to one option.",
+  "situation": "After getting a recommendation she interrogates the details of a single listing. Tests grounded Q&A over listing data (no hallucination) and honesty when data is missing.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "Recommend me a 1-bedroom condo in the east, budget $3,500."
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "Tell me more about your top pick."
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "Are utilities included in that price? And can I cook there?"
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "How far is it from the nearest MRT exactly, and which line?"
+    },
+    {
+      "turn": 5,
+      "role": "user",
+      "content": "The rent is a bit high — is there any room to negotiate, and is this a direct owner or an agent?"
+    },
+    {
+      "turn": 6,
+      "role": "user",
+      "content": "Is there anything about this place you *don't* know from the listing?"
+    }
+  ]
+}

@@ -1,0 +1,158 @@
+{
+  "generatedAt": "2026-07-29T20:23:36.237Z",
+  "referenceDate": "2026-07-28",
+  "input": {
+    "rows": 502
+  },
+  "output": {
+    "rows": 500,
+    "recommendable": 494,
+    "excluded": 6
+  },
+  "duplicates": {
+    "exactContent": [
+      {
+        "id": "SG0121",
+        "keptIndex": 120,
+        "droppedIndex": 500
+      },
+      {
+        "id": "SG0474",
+        "keptIndex": 473,
+        "droppedIndex": 501
+      }
+    ]
+  },
+  "bySeverity": {
+    "block": 8,
+    "warn": 24,
+    "info": 24
+  },
+  "byEscalation": {
+    "ops_review": 20,
+    "source_followup": 6,
+    "none": 30
+  },
+  "byRule": {
+    "deposit_format_string": 6,
+    "available_from_text": 6,
+    "rent_format_string": 6,
+    "size_missing": 6,
+    "mrt_missing": 6,
+    "district_missing": 6,
+    "bedrooms_contradiction": 6,
+    "area_normalized": 6,
+    "rent_outlier_low": 3,
+    "duplicate_exact": 2,
+    "rent_zero": 2,
+    "rent_outlier_high": 1
+  },
+  "cohorts": [
+    {
+      "listingType": "room",
+      "propertyType": "Condominium",
+      "n": 114,
+      "median": 1950,
+      "p10": 1300,
+      "p90": 2700
+    },
+    {
+      "listingType": "room",
+      "propertyType": "HDB",
+      "n": 88,
+      "median": 1200,
+      "p10": 800,
+      "p90": 1750
+    },
+    {
+      "listingType": "room",
+      "propertyType": "Landed",
+      "n": 14,
+      "median": 2200,
+      "p10": 1750,
+      "p90": 3100
+    },
+    {
+      "listingType": "whole_unit",
+      "propertyType": "Condominium",
+      "n": 108,
+      "median": 5775,
+      "p10": 3450,
+      "p90": 8650
+    },
+    {
+      "listingType": "whole_unit",
+      "propertyType": "HDB",
+      "n": 117,
+      "median": 3400,
+      "p10": 2600,
+      "p90": 4550
+    },
+    {
+      "listingType": "whole_unit",
+      "propertyType": "Landed",
+      "n": 18,
+      "median": 15600,
+      "p10": 9000,
+      "p90": 21550
+    },
+    {
+      "listingType": "whole_unit",
+      "propertyType": "Serviced Apartment",
+      "n": 39,
+      "median": 6300,
+      "p10": 4000,
+      "p90": 10050
+    }
+  ],
+  "areaCanonicalization": [
+    {
+      "key": "ang mo kio",
+      "canonical": "Ang Mo Kio",
+      "variants": {
+        "Ang Mo Kio": 14,
+        "  ang mo kio  ": 1
+      }
+    },
+    {
+      "key": "choa chu kang",
+      "canonical": "Choa Chu Kang",
+      "variants": {
+        "  choa chu kang  ": 1,
+        "Choa Chu Kang": 6
+      }
+    },
+    {
+      "key": "eunos",
+      "canonical": "Eunos",
+      "variants": {
+        "Eunos": 14,
+        "  eunos  ": 1
+      }
+    },
+    {
+      "key": "marine parade",
+      "canonical": "Marine Parade",
+      "variants": {
+        "Marine Parade": 13,
+        "  marine parade  ": 1
+      }
+    },
+    {
+      "key": "toa payoh",
+      "canonical": "Toa Payoh",
+      "variants": {
+        "Toa Payoh": 8,
+        "  toa payoh  ": 1
+      }
+    },
+    {
+      "key": "west coast",
+      "canonical": "West Coast",
+      "variants": {
+        "West Coast": 11,
+        "  west coast  ": 1
+      }
+    }
+  ]
+}

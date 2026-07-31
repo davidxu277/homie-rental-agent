@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据质量报告 · Homie 租房 Agent</title>
+<style>
+  :root{
+    --ink:#14181f; --ink2:#3d4654; --mute:#6c7686;
+    --line:#e2e6ec; --line2:#f4f6f9; --bg:#fff;
+    --accent:#0f766e; --accent-soft:#e6f4f2;
+    --block:#b91c1c; --block-soft:#fdeeee;
+    --warn:#b45309; --warn-soft:#fef4e6;
+    --info:#1d4ed8; --info-soft:#eef2fe;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#f2f4f7; --ink2:#c8cfd9; --mute:#8b95a4;
+      --line:#2c333d; --line2:#1b2027; --bg:#12161b;
+      --accent:#5eead4; --accent-soft:#123834;
+      --block:#fca5a5; --block-soft:#3a1c1c;
+      --warn:#fcd34d; --warn-soft:#3a2c12;
+      --info:#a5c0fd; --info-soft:#1a2440;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:32px 24px 64px; background:var(--bg); color:var(--ink2);
+    font:14px/1.7 "PingFang SC","Hiragino Sans GB",-apple-system,"Helvetica Neue",sans-serif;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+  h1,h2{color:var(--ink);font-weight:600;margin:0}
+  h1{font-size:24px;letter-spacing:-.01em}
+  h2{font-size:16px;margin:36px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .sub{color:var(--mute);font-size:13px;margin-top:6px}
+  code,.mono{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.9em}
+
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:22px 0 8px}
+  .card{border:1px solid var(--line);border-radius:8px;padding:13px 15px}
+  .card .v{font-size:26px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.2}
+  .card .k{font-size:12px;color:var(--mute);margin-top:2px}
+  .card.block .v{color:var(--block)} .card.warn .v{color:var(--warn)} .card.info .v{color:var(--info)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0 4px}
+  th{text-align:left;font-weight:600;color:var(--ink);background:var(--line2);padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:7px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .scroll{overflow-x:auto}
+
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:20px;white-space:nowrap}
+  .tag.block{background:var(--block-soft);color:var(--block)}
+  .tag.warn{background:var(--warn-soft);color:var(--warn)}
+  .tag.info{background:var(--info-soft);color:var(--info)}
+
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+  .filters button{
+    font:inherit;font-size:12.5px;padding:5px 13px;border-radius:20px;cursor:pointer;
+    border:1px solid var(--line);background:transparent;color:var(--ink2);
+  }
+  .filters button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:600}
+
+  .fix{color:var(--accent);font-weight:600}
+  .muted{color:var(--mute)}
+  .note{background:var(--accent-soft);border-left:3px solid var(--accent);border-radius:6px;padding:11px 14px;margin:14px 0;font-size:13px}
+  .note b{color:var(--ink)}
+  footer{margin-top:44px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--mute)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>数据质量报告</h1>
+  <div class="sub">
+    <code>listings.json</code> → <code>listings.clean.json</code> ·
+    生成于 2026-07-29T20:23:36.237Z · 参考日期 2026-07-28
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="v">502</div><div class="k">输入行数</div></div>
+    <div class="card"><div class="v">500</div><div class="k">去重后</div></div>
+    <div class="card"><div class="v">494</div><div class="k">可推荐</div></div>
+    <div class="card block"><div class="v">8</div><div class="k">block · 移出推荐池，需人工介入</div></div>
+    <div class="card warn"><div class="v">24</div><div class="k">warn · 照常推荐，但 agent 必须披露</div></div>
+    <div class="card info"><div class="v">24</div><div class="k">info · 自动规范化，不影响用户</div></div>
+  </div>
+
+  <div class="cards">
+    <div class="card block"><div class="v">20</div><div class="k">待运维审核</div></div>
+    <div class="card warn"><div class="v">6</div><div class="k">待回访房源方</div></div>
+    <div class="card"><div class="v">30</div><div class="k">已自动处理，无需介入</div></div>
+  </div>
+
+  <div class="note">
+    <b>severity 和 escalation 是正交的两个轴。</b>
+    severity 说的是<b>产品怎么表现</b>（block 移出推荐池 / warn 照常推荐但披露 / info 静默规范化），
+    escalation 说的是<b>要不要人来管、优先级多高</b>。两者不能合并：缺面积在产品上只需 warn
+    （照常推荐 + 披露），但运维上是高优先级 —— 面积参与硬过滤，缺失时按「缺失≠不满足」放行，
+    用户可能看到根本不符合面积要求的房源；而租金写成 "S$1200" 是 info，也确实不需要任何人管。
+  </div>
+
+  
+  <h2>运维审核（20 条）</h2>
+  <div class="note">涉及硬过滤字段 —— 缺了或错了会让用户看到不该看到的房源，结果本身会变错，必须主动追</div>
+  <div class="scroll">
+  <table>
+    <thead><tr>
+      <th>房源</th><th>问题</th><th>产品行为</th><th class="n">原始值</th><th>修复建议</th><th>判定依据</th>
+    </tr></thead>
+    <tbody>
+<tr>
+        <td class="mono">SG0121</td>
+        <td>整行内容完全重复</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">&quot;row #500&quot;</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">与 row #120 内容完全一致（含 id），已丢弃后者</td>
+      </tr>
+<tr>
+        <td class="mono">SG0474</td>
+        <td>整行内容完全重复</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">&quot;row #501&quot;</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">与 row #473 内容完全一致（含 id），已丢弃后者</td>
+      </tr>
+<tr>
+        <td class="mono">SG0003</td>
+        <td>未提供面积</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">面积未提供；用户明确要求面积时该房源不参与筛选</td>
+      </tr>
+<tr>
+        <td class="mono">SG0009</td>
+        <td>租金为 0，无法推断真实价格</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">0</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">租金为 0，无法推断真实价格</td>
+      </tr>
+<tr>
+        <td class="mono">SG0010</td>
+        <td>未提供面积</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">面积未提供；用户明确要求面积时该房源不参与筛选</td>
+      </tr>
+<tr>
+        <td class="mono">SG0125</td>
+        <td>单间房源却标了多个卧室</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">2</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">listingType 为 room 但 bedrooms &gt; 1，以 listingType 为准</td>
+      </tr>
+<tr>
+        <td class="mono">SG0136</td>
+        <td>未提供面积</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">面积未提供；用户明确要求面积时该房源不参与筛选</td>
+      </tr>
+<tr>
+        <td class="mono">SG0171</td>
+        <td>未提供面积</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">面积未提供；用户明确要求面积时该房源不参与筛选</td>
+      </tr>
+<tr>
+        <td class="mono">SG0173</td>
+        <td>租金远低于同类，疑似掉了一位数字</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">185</td>
+        <td><span class="fix">→ 1850</span>
+               <span class="muted">dropped_digit · 置信度 0.95</span></td>
+        <td class="muted">同类（room / Condominium, n=114）中位数 1950，比值 0.09</td>
+      </tr>
+<tr>
+        <td class="mono">SG0274</td>
+        <td>未提供面积</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">面积未提供；用户明确要求面积时该房源不参与筛选</td>
+      </tr>
+<tr>
+        <td class="mono">SG0308</td>
+        <td>租金为 0，无法推断真实价格</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">0</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">租金为 0，无法推断真实价格</td>
+      </tr>
+<tr>
+        <td class="mono">SG0311</td>
+        <td>单间房源却标了多个卧室</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">3</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">listingType 为 room 但 bedrooms &gt; 1，以 listingType 为准</td>
+      </tr>
+<tr>
+        <td class="mono">SG0339</td>
+        <td>未提供面积</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">面积未提供；用户明确要求面积时该房源不参与筛选</td>
+      </tr>
+<tr>
+        <td class="mono">SG0387</td>
+        <td>租金远高于同类，疑似多了一位数字</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">62500</td>
+        <td><span class="fix">→ 6250</span>
+               <span class="muted">extra_digit · 置信度 0.92</span></td>
+        <td class="muted">同类（whole_unit / Condominium, n=108）中位数 5775，比值 10.82</td>
+      </tr>
+<tr>
+        <td class="mono">SG0395</td>
+        <td>租金远低于同类，疑似掉了一位数字</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">245</td>
+        <td><span class="fix">→ 2450</span>
+               <span class="muted">dropped_digit · 置信度 0.74</span></td>
+        <td class="muted">同类（room / Condominium, n=114）中位数 1950，比值 0.13</td>
+      </tr>
+<tr>
+        <td class="mono">SG0400</td>
+        <td>租金远低于同类，疑似掉了一位数字</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">270</td>
+        <td><span class="fix">→ 2700</span>
+               <span class="muted">dropped_digit · 置信度 0.62</span></td>
+        <td class="muted">同类（room / Condominium, n=114）中位数 1950，比值 0.14</td>
+      </tr>
+<tr>
+        <td class="mono">SG0413</td>
+        <td>单间房源却标了多个卧室</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">2</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">listingType 为 room 但 bedrooms &gt; 1，以 listingType 为准</td>
+      </tr>
+<tr>
+        <td class="mono">SG0421</td>
+        <td>单间房源却标了多个卧室</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">3</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">listingType 为 room 但 bedrooms &gt; 1，以 listingType 为准</td>
+      </tr>
+<tr>
+        <td class="mono">SG0451</td>
+        <td>单间房源却标了多个卧室</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">2</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">listingType 为 room 但 bedrooms &gt; 1，以 listingType 为准</td>
+      </tr>
+<tr>
+        <td class="mono">SG0465</td>
+        <td>单间房源却标了多个卧室</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">3</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">listingType 为 room 但 bedrooms &gt; 1，以 listingType 为准</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>回访房源方（6 条）</h2>
+  <div class="note">只影响软打分 —— 缺了只是少一个加分维度，不会让结果变错，低优先补齐</div>
+  <div class="scroll">
+  <table>
+    <thead><tr>
+      <th>房源</th><th>问题</th><th>产品行为</th><th class="n">原始值</th><th>修复建议</th><th>判定依据</th>
+    </tr></thead>
+    <tbody>
+<tr>
+        <td class="mono">SG0025</td>
+        <td>未提供最近地铁站</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">最近地铁站未提供；不用合成坐标反推</td>
+      </tr>
+<tr>
+        <td class="mono">SG0154</td>
+        <td>未提供最近地铁站</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">最近地铁站未提供；不用合成坐标反推</td>
+      </tr>
+<tr>
+        <td class="mono">SG0203</td>
+        <td>未提供最近地铁站</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">最近地铁站未提供；不用合成坐标反推</td>
+      </tr>
+<tr>
+        <td class="mono">SG0271</td>
+        <td>未提供最近地铁站</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">最近地铁站未提供；不用合成坐标反推</td>
+      </tr>
+<tr>
+        <td class="mono">SG0438</td>
+        <td>未提供最近地铁站</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">最近地铁站未提供；不用合成坐标反推</td>
+      </tr>
+<tr>
+        <td class="mono">SG0473</td>
+        <td>未提供最近地铁站</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td><span class="muted">—</span></td>
+        <td class="muted">最近地铁站未提供；不用合成坐标反推</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="note">
+    <b>修复建议只进报告，不写回业务字段。</b>
+    租金错误在租房产品里伤害最大 —— 用户按 $185 约看房、到场发现是 $1,850，信任就没了。
+    系统提出建议，改不改由人决定。
+  </div>
+
+  <h2>按规则统计</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>规则</th><th>说明</th><th>产品行为</th><th>处理方</th><th class="n">数量</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mono">deposit_format_string</td>
+        <td>押金写成了字符串，已解析</td>
+        <td><span class="tag info">info</span></td>
+        <td><span class="muted">—</span></td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">available_from_text</td>
+        <td>入住日期是自由文本，已落到参考日</td>
+        <td><span class="tag info">info</span></td>
+        <td><span class="muted">—</span></td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">rent_format_string</td>
+        <td>租金写成了字符串，已解析</td>
+        <td><span class="tag info">info</span></td>
+        <td><span class="muted">—</span></td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">size_missing</td>
+        <td>未提供面积</td>
+        <td><span class="tag warn">warn</span></td>
+        <td>运维审核</td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">mrt_missing</td>
+        <td>未提供最近地铁站</td>
+        <td><span class="tag warn">warn</span></td>
+        <td>回访房源方</td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">district_missing</td>
+        <td>未提供邮区</td>
+        <td><span class="tag warn">warn</span></td>
+        <td><span class="muted">—</span></td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">bedrooms_contradiction</td>
+        <td>单间房源却标了多个卧室</td>
+        <td><span class="tag warn">warn</span></td>
+        <td>运维审核</td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">area_normalized</td>
+        <td>区域名有多余空格或大小写不一致，已规范化</td>
+        <td><span class="tag info">info</span></td>
+        <td><span class="muted">—</span></td>
+        <td class="n">6</td>
+      </tr>
+<tr>
+        <td class="mono">rent_outlier_low</td>
+        <td>租金远低于同类，疑似掉了一位数字</td>
+        <td><span class="tag block">block</span></td>
+        <td>运维审核</td>
+        <td class="n">3</td>
+      </tr>
+<tr>
+        <td class="mono">duplicate_exact</td>
+        <td>整行内容完全重复</td>
+        <td><span class="tag block">block</span></td>
+        <td>运维审核</td>
+        <td class="n">2</td>
+      </tr>
+<tr>
+        <td class="mono">rent_zero</td>
+        <td>租金为 0，无法推断真实价格</td>
+        <td><span class="tag block">block</span></td>
+        <td>运维审核</td>
+        <td class="n">2</td>
+      </tr>
+<tr>
+        <td class="mono">rent_outlier_high</td>
+        <td>租金远高于同类，疑似多了一位数字</td>
+        <td><span class="tag block">block</span></td>
+        <td>运维审核</td>
+        <td class="n">1</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>同类租金基准</h2>
+  <div class="note">
+    异常租金按 <b>(listingType, propertyType) 分组中位数的比值</b> 判定，而不是全局分位数。
+    全局砍尾会误伤 —— 有地住宅整租的中位数本来就是 $15,600。
+  </div>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>房型 / 物业</th><th class="n">n</th><th class="n">中位数</th><th class="n">p10</th><th class="n">p90</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>room / Condominium</td>
+        <td class="n">114</td>
+        <td class="n">1,950</td>
+        <td class="n">1,300</td>
+        <td class="n">2,700</td>
+      </tr>
+<tr>
+        <td>room / HDB</td>
+        <td class="n">88</td>
+        <td class="n">1,200</td>
+        <td class="n">800</td>
+        <td class="n">1,750</td>
+      </tr>
+<tr>
+        <td>room / Landed</td>
+        <td class="n">14</td>
+        <td class="n">2,200</td>
+        <td class="n">1,750</td>
+        <td class="n">3,100</td>
+      </tr>
+<tr>
+        <td>whole_unit / Condominium</td>
+        <td class="n">108</td>
+        <td class="n">5,775</td>
+        <td class="n">3,450</td>
+        <td class="n">8,650</td>
+      </tr>
+<tr>
+        <td>whole_unit / HDB</td>
+        <td class="n">117</td>
+        <td class="n">3,400</td>
+        <td class="n">2,600</td>
+        <td class="n">4,550</td>
+      </tr>
+<tr>
+        <td>whole_unit / Landed</td>
+        <td class="n">18</td>
+        <td class="n">15,600</td>
+        <td class="n">9,000</td>
+        <td class="n">21,550</td>
+      </tr>
+<tr>
+        <td>whole_unit / Serviced Apartment</td>
+        <td class="n">39</td>
+        <td class="n">6,300</td>
+        <td class="n">4,000</td>
+        <td class="n">10,050</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>区域名规范化</h2>
+  <div class="note">
+    闭集 + 多数票，<b>不手写别名表</b>：按归一键分组，取组内出现频次最高的原始拼写作为 canonical。
+    映射从数据自己长出来 —— 这也是为什么不能用 title-case，语料里 <code>one-north</code> 的正确写法就是全小写。
+  </div>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>归一键</th><th>组内分布</th><th>canonical</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="mono">ang mo kio</td>
+        <td class="mono muted">&quot;Ang Mo Kio&quot; ×14 · &quot;  ang mo kio  &quot; ×1</td>
+        <td><b>Ang Mo Kio</b></td>
+      </tr>
+<tr>
+        <td class="mono">choa chu kang</td>
+        <td class="mono muted">&quot;  choa chu kang  &quot; ×1 · &quot;Choa Chu Kang&quot; ×6</td>
+        <td><b>Choa Chu Kang</b></td>
+      </tr>
+<tr>
+        <td class="mono">eunos</td>
+        <td class="mono muted">&quot;Eunos&quot; ×14 · &quot;  eunos  &quot; ×1</td>
+        <td><b>Eunos</b></td>
+      </tr>
+<tr>
+        <td class="mono">marine parade</td>
+        <td class="mono muted">&quot;Marine Parade&quot; ×13 · &quot;  marine parade  &quot; ×1</td>
+        <td><b>Marine Parade</b></td>
+      </tr>
+<tr>
+        <td class="mono">toa payoh</td>
+        <td class="mono muted">&quot;Toa Payoh&quot; ×8 · &quot;  toa payoh  &quot; ×1</td>
+        <td><b>Toa Payoh</b></td>
+      </tr>
+<tr>
+        <td class="mono">west coast</td>
+        <td class="mono muted">&quot;West Coast&quot; ×11 · &quot;  west coast  &quot; ×1</td>
+        <td><b>West Coast</b></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>全部 issue（56 条）</h2>
+  <div class="filters">
+    <button data-filter="all" aria-pressed="true">全部 56</button>
+    <button data-filter="block" aria-pressed="false">block 8</button>
+    <button data-filter="warn" aria-pressed="false">warn 24</button>
+    <button data-filter="info" aria-pressed="false">info 24</button>
+  </div>
+  <div class="scroll">
+  <table id="all-issues">
+    <thead><tr>
+      <th>issueId</th><th>房源</th><th>字段</th><th>规则</th><th>严重度</th>
+      <th class="n">原始值</th><th class="n">规范化后</th>
+    </tr></thead>
+    <tbody>
+      <tr data-severity="block">
+        <td class="mono muted">a01f3479dcc2</td>
+        <td class="mono">SG0121</td>
+        <td class="mono muted">*</td>
+        <td class="mono">duplicate_exact</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">&quot;row #500&quot;</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="block">
+        <td class="mono muted">c6e81c88b933</td>
+        <td class="mono">SG0474</td>
+        <td class="mono muted">*</td>
+        <td class="mono">duplicate_exact</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">&quot;row #501&quot;</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">650d15d6b4ae</td>
+        <td class="mono">SG0002</td>
+        <td class="mono muted">deposit</td>
+        <td class="mono">deposit_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;1 month&quot;</td>
+        <td class="n mono">{&quot;months&quot;:1}</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">c458856915b9</td>
+        <td class="mono">SG0054</td>
+        <td class="mono muted">availableFrom</td>
+        <td class="mono">available_from_text</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;immediate&quot;</td>
+        <td class="n mono">&quot;2026-07-28&quot;</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">b6ceb45d186d</td>
+        <td class="mono">SG0115</td>
+        <td class="mono muted">availableFrom</td>
+        <td class="mono">available_from_text</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;immediate&quot;</td>
+        <td class="n mono">&quot;2026-07-28&quot;</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">2a1ff9600e60</td>
+        <td class="mono">SG0118</td>
+        <td class="mono muted">availableFrom</td>
+        <td class="mono">available_from_text</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;Immediate&quot;</td>
+        <td class="n mono">&quot;2026-07-28&quot;</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">1d6ec4df26ab</td>
+        <td class="mono">SG0123</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;$5550 negotiable&quot;</td>
+        <td class="n mono">{&quot;value&quot;:5550,&quot;negotiable&quot;:true}</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">03d085c70fa5</td>
+        <td class="mono">SG0214</td>
+        <td class="mono muted">availableFrom</td>
+        <td class="mono">available_from_text</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;Immediate&quot;</td>
+        <td class="n mono">&quot;2026-07-28&quot;</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">6a210065a82c</td>
+        <td class="mono">SG0223</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;6,300&quot;</td>
+        <td class="n mono">6300</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">0f9866100b2d</td>
+        <td class="mono">SG0243</td>
+        <td class="mono muted">deposit</td>
+        <td class="mono">deposit_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;1 month&quot;</td>
+        <td class="n mono">{&quot;months&quot;:1}</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">03438be4dcca</td>
+        <td class="mono">SG0272</td>
+        <td class="mono muted">availableFrom</td>
+        <td class="mono">available_from_text</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;immediate&quot;</td>
+        <td class="n mono">&quot;2026-07-28&quot;</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">82148d2add5e</td>
+        <td class="mono">SG0276</td>
+        <td class="mono muted">deposit</td>
+        <td class="mono">deposit_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;1 month&quot;</td>
+        <td class="n mono">{&quot;months&quot;:1}</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">725e4bbb9d2c</td>
+        <td class="mono">SG0298</td>
+        <td class="mono muted">availableFrom</td>
+        <td class="mono">available_from_text</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;ASAP&quot;</td>
+        <td class="n mono">&quot;2026-07-28&quot;</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">defa23fc11d4</td>
+        <td class="mono">SG0303</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;S$1200&quot;</td>
+        <td class="n mono">1200</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">e42d2bbf3e8e</td>
+        <td class="mono">SG0324</td>
+        <td class="mono muted">deposit</td>
+        <td class="mono">deposit_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;1 month&quot;</td>
+        <td class="n mono">{&quot;months&quot;:1}</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">72cba9a77b46</td>
+        <td class="mono">SG0334</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;2,050&quot;</td>
+        <td class="n mono">2050</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">7d4239e2595f</td>
+        <td class="mono">SG0338</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;4400/mo&quot;</td>
+        <td class="n mono">4400</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">4af42b16a2eb</td>
+        <td class="mono">SG0394</td>
+        <td class="mono muted">deposit</td>
+        <td class="mono">deposit_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;1 month&quot;</td>
+        <td class="n mono">{&quot;months&quot;:1}</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">11f652bc7de0</td>
+        <td class="mono">SG0419</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;S$2250&quot;</td>
+        <td class="n mono">2250</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">83e30065050b</td>
+        <td class="mono">SG0457</td>
+        <td class="mono muted">deposit</td>
+        <td class="mono">deposit_format_string</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;1 month&quot;</td>
+        <td class="n mono">{&quot;months&quot;:1}</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">4548511a9c6a</td>
+        <td class="mono">SG0003</td>
+        <td class="mono muted">sizeSqft</td>
+        <td class="mono">size_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="block">
+        <td class="mono muted">73e02a6314eb</td>
+        <td class="mono">SG0009</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_zero</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">0</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">258137a7d126</td>
+        <td class="mono">SG0010</td>
+        <td class="mono muted">sizeSqft</td>
+        <td class="mono">size_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">0a682dbe7b93</td>
+        <td class="mono">SG0025</td>
+        <td class="mono muted">nearestMrt</td>
+        <td class="mono">mrt_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">087ef738271e</td>
+        <td class="mono">SG0039</td>
+        <td class="mono muted">district</td>
+        <td class="mono">district_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono">&quot;D25&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">9e9d00f22463</td>
+        <td class="mono">SG0114</td>
+        <td class="mono muted">district</td>
+        <td class="mono">district_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono">&quot;D23&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">545a8b3b0991</td>
+        <td class="mono">SG0125</td>
+        <td class="mono muted">bedrooms</td>
+        <td class="mono">bedrooms_contradiction</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">2</td>
+        <td class="n mono">1</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">a9eb7ba4dfbe</td>
+        <td class="mono">SG0136</td>
+        <td class="mono muted">sizeSqft</td>
+        <td class="mono">size_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">c44c434739a3</td>
+        <td class="mono">SG0154</td>
+        <td class="mono muted">nearestMrt</td>
+        <td class="mono">mrt_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">564e03c7f8dd</td>
+        <td class="mono">SG0162</td>
+        <td class="mono muted">area</td>
+        <td class="mono">area_normalized</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;  marine parade  &quot;</td>
+        <td class="n mono">&quot;Marine Parade&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">a80b2040d0b1</td>
+        <td class="mono">SG0171</td>
+        <td class="mono muted">sizeSqft</td>
+        <td class="mono">size_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="block">
+        <td class="mono muted">5b5c43de92f1</td>
+        <td class="mono">SG0173</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_outlier_low</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">185</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">93c4b5649248</td>
+        <td class="mono">SG0185</td>
+        <td class="mono muted">district</td>
+        <td class="mono">district_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono">&quot;D22&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">db99bd6f6224</td>
+        <td class="mono">SG0203</td>
+        <td class="mono muted">nearestMrt</td>
+        <td class="mono">mrt_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">ff0a006a8079</td>
+        <td class="mono">SG0221</td>
+        <td class="mono muted">area</td>
+        <td class="mono">area_normalized</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;  choa chu kang  &quot;</td>
+        <td class="n mono">&quot;Choa Chu Kang&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">0c3d9006bf1a</td>
+        <td class="mono">SG0233</td>
+        <td class="mono muted">district</td>
+        <td class="mono">district_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono">&quot;D28&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">bd8dc38f20c7</td>
+        <td class="mono">SG0271</td>
+        <td class="mono muted">nearestMrt</td>
+        <td class="mono">mrt_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">6121b76530e1</td>
+        <td class="mono">SG0274</td>
+        <td class="mono muted">sizeSqft</td>
+        <td class="mono">size_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="block">
+        <td class="mono muted">658c5a519149</td>
+        <td class="mono">SG0308</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_zero</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">0</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">fcb8992fafa5</td>
+        <td class="mono">SG0311</td>
+        <td class="mono muted">bedrooms</td>
+        <td class="mono">bedrooms_contradiction</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">3</td>
+        <td class="n mono">1</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">795c3e1a2f3a</td>
+        <td class="mono">SG0339</td>
+        <td class="mono muted">sizeSqft</td>
+        <td class="mono">size_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">29b7baf3c10d</td>
+        <td class="mono">SG0343</td>
+        <td class="mono muted">district</td>
+        <td class="mono">district_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono">&quot;D27&quot;</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">97ce55390d68</td>
+        <td class="mono">SG0349</td>
+        <td class="mono muted">area</td>
+        <td class="mono">area_normalized</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;  west coast  &quot;</td>
+        <td class="n mono">&quot;West Coast&quot;</td>
+      </tr>
+<tr data-severity="block">
+        <td class="mono muted">1cae67b9a112</td>
+        <td class="mono">SG0387</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_outlier_high</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">62500</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="block">
+        <td class="mono muted">e731b3ad40cc</td>
+        <td class="mono">SG0395</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_outlier_low</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">245</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="block">
+        <td class="mono muted">3fa1e7a0b97b</td>
+        <td class="mono">SG0400</td>
+        <td class="mono muted">monthlyRentSgd</td>
+        <td class="mono">rent_outlier_low</td>
+        <td><span class="tag block">block</span></td>
+        <td class="n mono">270</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">897625967631</td>
+        <td class="mono">SG0413</td>
+        <td class="mono muted">bedrooms</td>
+        <td class="mono">bedrooms_contradiction</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">2</td>
+        <td class="n mono">1</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">e1fa216ae516</td>
+        <td class="mono">SG0421</td>
+        <td class="mono muted">bedrooms</td>
+        <td class="mono">bedrooms_contradiction</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">3</td>
+        <td class="n mono">1</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">8582b876891e</td>
+        <td class="mono">SG0428</td>
+        <td class="mono muted">area</td>
+        <td class="mono">area_normalized</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;  eunos  &quot;</td>
+        <td class="n mono">&quot;Eunos&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">50452c79baac</td>
+        <td class="mono">SG0438</td>
+        <td class="mono muted">nearestMrt</td>
+        <td class="mono">mrt_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">6f6ac790cb79</td>
+        <td class="mono">SG0451</td>
+        <td class="mono muted">bedrooms</td>
+        <td class="mono">bedrooms_contradiction</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">2</td>
+        <td class="n mono">1</td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">f0eed54162e4</td>
+        <td class="mono">SG0456</td>
+        <td class="mono muted">area</td>
+        <td class="mono">area_normalized</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;  ang mo kio  &quot;</td>
+        <td class="n mono">&quot;Ang Mo Kio&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">8d4158b8afc3</td>
+        <td class="mono">SG0465</td>
+        <td class="mono muted">bedrooms</td>
+        <td class="mono">bedrooms_contradiction</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">3</td>
+        <td class="n mono">1</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">f82f8e9bfeff</td>
+        <td class="mono">SG0469</td>
+        <td class="mono muted">district</td>
+        <td class="mono">district_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">&quot;&quot;</td>
+        <td class="n mono">&quot;D05&quot;</td>
+      </tr>
+<tr data-severity="warn">
+        <td class="mono muted">697ca0825ae7</td>
+        <td class="mono">SG0473</td>
+        <td class="mono muted">nearestMrt</td>
+        <td class="mono">mrt_missing</td>
+        <td><span class="tag warn">warn</span></td>
+        <td class="n mono">null</td>
+        <td class="n mono"><span class="muted">—</span></td>
+      </tr>
+<tr data-severity="info">
+        <td class="mono muted">aeb5b42dcd96</td>
+        <td class="mono">SG0491</td>
+        <td class="mono muted">area</td>
+        <td class="mono">area_normalized</td>
+        <td><span class="tag info">info</span></td>
+        <td class="n mono">&quot;  toa payoh  &quot;</td>
+        <td class="n mono">&quot;Toa Payoh&quot;</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <footer>
+    issueId 是 <code>hash(listingId + rule + field)</code>，跨次运行稳定 ——
+    两次运行的 issue 集合可以直接做差集，房源库更新时能自动报「新增 N 条 block 级异常」。<br>
+    真实生产会把这些 issue 打到 Sentry / Slack webhook，block 级自动开 ticket，
+    <code>suggestedFix</code> 进人工审核队列，审核通过才写回主库。
+  </footer>
+
+</div>
+<script>
+  const buttons = document.querySelectorAll(".filters button");
+  const rows = document.querySelectorAll("#all-issues tbody tr");
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      const filter = button.dataset.filter;
+      for (const other of buttons) other.setAttribute("aria-pressed", String(other === button));
+      for (const row of rows) {
+        row.hidden = filter !== "all" && row.dataset.severity !== filter;
+      }
+    });
+  }
+</script>
+</body>
+</html>

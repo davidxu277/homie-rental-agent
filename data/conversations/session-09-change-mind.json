@@ -1,0 +1,29 @@
+{
+  "sessionId": "session-09-change-mind",
+  "title": "Changes location mid-conversation",
+  "difficulty": "medium",
+  "persona": "Sofia, 30, flexible on where she lives, indecisive.",
+  "situation": "Gives one set of constraints, gets results, then changes a key one. Tests whether the agent updates state correctly instead of restarting or mixing old and new constraints.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "Looking for a whole 2-bedroom to rent, around $3,000, in Tampines."
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "Actually, on second thought, my job just moved to the west. Can we look at Jurong / Clementi instead?"
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "Keep the same budget and size. And it needs to be available before October."
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "Great — of these new ones, which is closest to an MRT?"
+    }
+  ]
+}

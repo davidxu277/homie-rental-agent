@@ -1,0 +1,29 @@
+{
+  "sessionId": "session-05-contradictory-central",
+  "title": "Contradictory wants: central + spacious + cheap",
+  "difficulty": "hard",
+  "persona": "Jason, 29, works in tech, high expectations, first serious rental search.",
+  "situation": "Wants Orchard/CBD location, a big place, and a low price — all at once. Needs the agent to surface the trade-off and help him prioritise.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "I want a 2-bedroom in the Orchard area, at least 900 sqft, for under $3,000."
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "What do you mean there's nothing? There must be something."
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "Okay… what would I have to give up to make this work?"
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "Fine, I care most about staying central. Show me the best I can get near town for that budget."
+    }
+  ]
+}

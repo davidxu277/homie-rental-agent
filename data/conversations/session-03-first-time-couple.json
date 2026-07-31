@@ -1,0 +1,34 @@
+{
+  "sessionId": "session-03-first-time-couple",
+  "title": "First-time renters, unfamiliar with SG terms",
+  "difficulty": "medium",
+  "persona": "Aisha & Ben, mid-20s couple, new grads starting their first jobs.",
+  "situation": "Never rented before; confused by local jargon (HDB vs condo, master room, agent fee).",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "hey we're a couple looking for our first place together, budget maybe $2500ish total"
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "honestly we don't really get the difference between HDB and condo... which is better for us?"
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "what's an 'agent fee'? do we have to pay that?"
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "ok let's say HDB is fine. we both work in Jurong East. what can we get?"
+    },
+    {
+      "turn": 5,
+      "role": "user",
+      "content": "is a whole flat better than just renting a master room for two people?"
+    }
+  ]
+}

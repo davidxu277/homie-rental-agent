@@ -1,0 +1,29 @@
+{
+  "sessionId": "session-10-open-cold-start",
+  "title": "Cold start with almost no information",
+  "difficulty": "hard",
+  "persona": "A first-time user who opens with a vague one-liner.",
+  "situation": "Almost no constraints given. Tests the agent's ability to drive the conversation with good clarifying questions rather than dumping random listings.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "help me find a place to rent"
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "idk, somewhere nice?"
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "maybe like $1500? i work in the city"
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "just show me whatever you think is best"
+    }
+  ]
+}

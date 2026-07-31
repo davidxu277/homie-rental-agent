@@ -1,0 +1,14 @@
+# 密钥 —— 绝不入库。repo 按作业要求可能会设成 public
+.env
+.env.*
+!.env.example
+
+node_modules/
+.next/
+.vercel/
+.DS_Store
+*.log
+
+# 回放记录是每次跑出来的临时产物，带时间戳、内容随模型输出漂移
+data/replay-*.md
+.vercel

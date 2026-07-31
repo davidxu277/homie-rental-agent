@@ -1,0 +1,34 @@
+{
+  "sessionId": "session-02-expat-family",
+  "title": "Expat family, whole condo near international school",
+  "difficulty": "medium",
+  "persona": "Michael, 41, relocating from London with his wife and two kids (aged 6 and 9).",
+  "situation": "Wants a family-friendly whole unit; kids will attend an international school in the Bukit Timah area.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "Hello, we're moving to Singapore in October and need a place for a family of four."
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "We'd like a 3-bedroom condo, ideally with a pool and gym for the kids. Budget up to $7,000."
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "Location matters a lot — the children will study around Bukit Timah, so somewhere close would be great."
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "We have a small dog, is that going to be a problem?"
+    },
+    {
+      "turn": 5,
+      "role": "user",
+      "content": "What's typical for the lease length and deposit here? We're not familiar with the local norms."
+    }
+  ]
+}

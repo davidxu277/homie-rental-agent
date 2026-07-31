@@ -1,0 +1,29 @@
+{
+  "sessionId": "session-06-pet-cook-shortlease",
+  "title": "Pet owner, wants cooking + 6-month lease",
+  "difficulty": "hard",
+  "persona": "Elena, 33, contractor on a 6-month project. Has a cat.",
+  "situation": "Three constraints that rarely co-occur in the dataset: pet-friendly, cooking allowed, and a short 6-month lease. Tests graceful handling when few/no listings fully match.",
+  "turns": [
+    {
+      "turn": 1,
+      "role": "user",
+      "content": "I need a place that allows my cat, lets me cook properly, and only for 6 months."
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "Budget is around $2,000. A room or a small whole unit both work."
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "Are there really that few options? Which of my requirements is the hardest to meet here?"
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "What would you suggest I compromise on to get more choices?"
+    }
+  ]
+}
