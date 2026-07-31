@@ -15,15 +15,15 @@ import {
   generateReply,
   type ReplySituation,
 } from "./claude.ts";
-import { applyCommuteFilter, toSummary, type CommuteSummary } from "./commute.ts";
+import {
+  applyCommuteFilter,
+  computeRelaxationsWithCommute,
+  toSummary,
+  type CommuteSummary,
+} from "./commute.ts";
 import { buildConflictInsight, type ConflictInsight } from "./insight.ts";
 import type { TransitProvider } from "./transit.ts";
-import {
-  computeRelaxations,
-  searchListings,
-  type Relaxation,
-  type ScoredListing,
-} from "./search.ts";
+import { searchListings, type Relaxation, type ScoredListing } from "./search.ts";
 import {
   applyPatch,
   clarifyingQuestion,
@@ -201,7 +201,10 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       conversation.lastSituation === "relax";
 
     if (wasToldScarce) {
-      const all = computeRelaxations(listings, toSearchQuery(state), {
+      // 用带通勤的版本：纯内存版会把"放宽后多出几套"算得偏乐观，
+      // 因为它不知道多出来的房源还得再过一遍通勤。这个数字是用户
+      // 做决定的依据（"多 5 套值得我多花 $90 吗"），不能虚报。
+      const all = await computeRelaxationsWithCommute(listings, query, options.transit, {
         // 用户说过"必须"的、以及这一轮刚重申的，都不进候选池
         keep: [...new Set([...pinnedSlots(state), ...mentionedThisTurn])],
       });

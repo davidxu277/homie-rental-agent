@@ -743,27 +743,37 @@ export type RelaxOptions = SearchOptions & {
  * **什么时候把放宽建议讲给用户听，是产品决策，不是检索能力的一部分。**
  * 命中 0 条就立刻甩一张放宽清单，等于替用户做了他还没做的决定。
  */
-export function computeRelaxations(
-  listings: CleanListing[],
+/**
+ * 一条待评估的放宽方案：放宽哪一项、怎么描述、放宽后的查询长什么样。
+ *
+ * 把「生成候选」从「数有多少套」里拆出来，是因为数数有两种方式：
+ * 纯内存的（下面的 computeRelaxations）和要查外部行程时间的（见 commute.ts）。
+ * 候选规则只写一份，两边共用，否则两套逻辑迟早漂移。
+ */
+export type RelaxationCandidate = {
+  key: string;
+  label: string;
+  description: string;
+  /** 放宽之后的查询 */
+  query: SearchQuery;
+};
+
+/** 有哪些可放宽的方案。纯函数，不碰数据 */
+export function relaxationCandidates(
   query: SearchQuery,
   options: RelaxOptions = {},
-): Relaxation[] {
+): RelaxationCandidate[] {
   const keep = new Set(options.keep ?? []);
-  const before = searchListings(listings, query, options).total;
-  const results: Relaxation[] = [];
+  const candidates: RelaxationCandidate[] = [];
 
   // 优先级 ①：用户自己给出的幅度，直接用，不走档位表
   for (const [key, value] of Object.entries(options.overrides ?? {})) {
     if (keep.has(key as keyof SearchQuery)) continue;
-    const relaxed = { ...query, [key]: value };
-    const after = searchListings(listings, relaxed, options).total;
-    results.push({
+    candidates.push({
       key,
       label: key,
       description: `set ${key} to ${JSON.stringify(value)}, as you asked`,
-      hitsBefore: before,
-      hitsAfter: after,
-      delta: after - before,
+      query: { ...query, [key]: value },
     });
   }
 
@@ -774,30 +784,42 @@ export function computeRelaxations(
     if (keep.has(notch.key) || overridden.has(notch.key)) continue;
     const relaxed = notch.apply(query);
     if (relaxed === null) continue; // 该约束没被使用，无从放宽
-    const after = searchListings(listings, relaxed, options).total;
-    results.push({
+    candidates.push({
       key: notch.key,
       label: notch.label,
       description: notch.describe(query),
-      hitsBefore: before,
-      hitsAfter: after,
-      delta: after - before,
+      query: relaxed,
     });
   }
 
   // 地点放宽需要外部提供候选 —— 引擎不做地理推断
   if (options.areaExpansion?.length && !keep.has("areas") && query.areas?.length) {
-    const relaxed = { ...query, areas: [...new Set([...query.areas, ...options.areaExpansion])] };
-    const after = searchListings(listings, relaxed, options).total;
-    results.push({
+    candidates.push({
       key: "areas",
       label: "Location",
       description: `also include ${options.areaExpansion.join(", ")}`,
-      hitsBefore: before,
-      hitsAfter: after,
-      delta: after - before,
+      query: { ...query, areas: [...new Set([...query.areas, ...options.areaExpansion])] },
     });
   }
+
+  return candidates;
+}
+
+/** 把候选和命中数拼成最终结果。排序和截断规则只在这里定义一次 */
+export function rankRelaxations(
+  candidates: RelaxationCandidate[],
+  before: number,
+  after: number[],
+  options: RelaxOptions = {},
+): Relaxation[] {
+  const results: Relaxation[] = candidates.map((candidate, index) => ({
+    key: candidate.key,
+    label: candidate.label,
+    description: candidate.description,
+    hitsBefore: before,
+    hitsAfter: after[index],
+    delta: after[index] - before,
+  }));
 
   // 返回全部推演结果，包括 delta = 0 的。
   //
@@ -809,4 +831,23 @@ export function computeRelaxations(
   const sorted = results.sort((a, b) => b.delta - a.delta || a.key.localeCompare(b.key));
 
   return options.top === undefined ? sorted : sorted.slice(0, options.top);
+}
+
+/**
+ * 纯内存的放宽推演。
+ *
+ * **查询里带 commute 时，这里算出来的数偏乐观** —— 通勤要查外部行程时间，
+ * 引擎不联网，所以放宽后多出来的房源没有过通勤那一关。实测过：
+ * 预算松 10% 这里报"多出 5 套"，算上通勤实际只多 2 套。
+ * 有 commute 的场景必须走 commute.ts 里的异步版本。
+ */
+export function computeRelaxations(
+  listings: CleanListing[],
+  query: SearchQuery,
+  options: RelaxOptions = {},
+): Relaxation[] {
+  const before = searchListings(listings, query, options).total;
+  const candidates = relaxationCandidates(query, options);
+  const after = candidates.map((c) => searchListings(listings, c.query, options).total);
+  return rankRelaxations(candidates, before, after, options);
 }

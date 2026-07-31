@@ -11,8 +11,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { applyCommuteFilter, toSummary } from "../src/lib/commute.ts";
+import {
+  applyCommuteFilter,
+  computeRelaxationsWithCommute,
+  toSummary,
+} from "../src/lib/commute.ts";
+import { computeRelaxations } from "../src/lib/search.ts";
 import type { ScoredListing, SearchResult } from "../src/lib/search.ts";
+import type { CleanListing } from "../src/lib/types.ts";
 import { departureTime } from "../src/lib/transit.ts";
 import type { TransitLookup, TransitProvider } from "../src/lib/transit.ts";
 
@@ -233,5 +239,90 @@ describe("通勤结果要能过 JSON", () => {
   it("直接序列化原始结果会丢数据 —— 这就是必须摊平的原因", () => {
     const raw = { minutes: new Map([["A", 35]]) };
     assert.deepEqual(JSON.parse(JSON.stringify(raw)).minutes, {}, "Map 会变成空对象");
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * 放宽推演必须把通勤算进去。
+ *
+ * 纯内存版报的是"放宽后数据库里多出几套"，但那些新房源还得再过一遍通勤。
+ * 实测偏差 2.5 倍：预算 $900 + 通勤≤40 分钟当前 9 套，纯内存版说松到
+ * $990 能多出 5 套，实际只多 2 套。用户拿这个数决定要不要多花 $90。
+ */
+describe("放宽推演算上通勤", () => {
+  const pool = [
+    // 站 → 到目的地的列车分钟数：Near 10、Far 50
+    mk("A", 800, "Near"),
+    mk("B", 850, "Near"),
+    mk("C", 950, "Near"), // 预算放宽后进来，通勤也过
+    mk("D", 960, "Far"), // 预算放宽后进来，但通勤超标
+    mk("E", 970, "Far"), // 同上
+  ];
+
+  function mk(id: string, rent: number, station: string) {
+    return {
+      id,
+      listingType: "room",
+      monthlyRentSgd: rent,
+      nearestMrt: { station, line: "EWL", walkMinutes: 5 },
+      bedrooms: 1,
+      bathrooms: 1,
+      sizeSqft: 200,
+      area: "X",
+      district: "D01",
+      propertyType: "HDB",
+      furnishing: "fully",
+      leaseMinMonths: 6,
+      availableFrom: "2026-08-01",
+      postedDate: "2026-07-20",
+      isImmediate: true,
+      cookingAllowed: true,
+      petFriendly: true,
+      aircon: true,
+      utilitiesIncluded: true,
+      amenities: [],
+      directOwner: true,
+      agentFee: "none",
+      rentNegotiable: false,
+      districtInferred: false,
+      rentPercentileInCohort: 0.5,
+      roomType: "common",
+      tenantPreferences: { gender: null, nationality: null, occupantType: "any" },
+      dataQuality: { flags: [], isRecommendable: true },
+      title: id,
+    } as unknown as CleanListing;
+  }
+
+  const transit = stub({ Near: 10, Far: 50 });
+  const query = {
+    listingType: "room" as const,
+    budgetMax: 900,
+    commute: { destination: "Raffles Place", maxMinutes: 40 },
+  };
+
+  it("放宽后多出来的房源也要过通勤这一关", async () => {
+    const withCommute = await computeRelaxationsWithCommute(pool, query, transit);
+    const budget = withCommute.find((r) => r.key === "budgetMax");
+
+    // 当前：A、B（Near，15 分钟）通过；C/D/E 超预算
+    assert.equal(budget?.hitsBefore, 2);
+    // 放宽到 $990：C 进来（Near，15 分钟 ✓），D/E 进来但 55 分钟 ✗
+    assert.equal(budget?.hitsAfter, 3);
+    assert.equal(budget?.delta, 1, "只能多 1 套，不是 3 套");
+  });
+
+  it("纯内存版会高估 —— 这就是必须分两版的原因", () => {
+    const naive = computeRelaxations(pool, query);
+    const budget = naive.find((r) => r.key === "budgetMax");
+    assert.equal(budget?.delta, 3, "纯内存版数的是数据库里多出几套，没过通勤");
+  });
+
+  it("没有通勤约束时两版结果完全一致", async () => {
+    const plain = { listingType: "room" as const, budgetMax: 900 };
+    const a = computeRelaxations(pool, plain);
+    const b = await computeRelaxationsWithCommute(pool, plain, NEVER_CALLED);
+    assert.deepEqual(b, a);
   });
 });

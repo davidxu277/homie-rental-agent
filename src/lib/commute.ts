@@ -15,7 +15,18 @@
  * 走到地铁站那段始终来自合成数据，只有列车段是真实世界的。
  */
 
-import type { ScoredListing, SearchResult } from "./search.ts";
+import {
+  computeRelaxations,
+  rankRelaxations,
+  relaxationCandidates,
+  searchListings,
+  type Relaxation,
+  type RelaxOptions,
+  type ScoredListing,
+  type SearchQuery,
+  type SearchResult,
+} from "./search.ts";
+import type { CleanListing } from "./types.ts";
 import type { TransitProvider } from "./transit.ts";
 
 export type CommuteOutcome = {
@@ -134,4 +145,44 @@ export async function applyCommuteFilter(
       unverified,
     },
   };
+}
+
+/**
+ * 算上通勤的放宽推演。
+ *
+ * 为什么必须单独做一版：`computeRelaxations` 是纯内存的，它不知道通勤会
+ * 再筛掉一部分。实测的偏差不小 —— 预算 $900 + 通勤≤40 分钟当前 9 套，
+ * 纯内存版说"松到 $990 能多出 5 套"，把通勤算进去实际只多 2 套。
+ *
+ * 这个数字是用户做决定的依据（"多 5 套值得我多花 $90 吗"），虚报就是误导。
+ *
+ * 候选方案仍然由 relaxationCandidates 生成、排序仍然由 rankRelaxations 决定 ——
+ * 两个版本共用同一套规则，只有"数有多少套"这一步不同，规则不会漂移。
+ *
+ * 成本：每个候选一次 applyCommuteFilter。目的地不变时缓存已经是热的，
+ * 只有放宽后新引入的站才需要真正发请求，通常是个位数。
+ */
+export async function computeRelaxationsWithCommute(
+  listings: CleanListing[],
+  query: SearchQuery,
+  provider: TransitProvider,
+  options: RelaxOptions = {},
+): Promise<Relaxation[]> {
+  const need = query.commute;
+  // 没有通勤约束时没有任何区别，走纯内存版，省掉一圈 await
+  if (!need?.maxMinutes) return computeRelaxations(listings, query, options);
+
+  const count = async (q: SearchQuery): Promise<number> => {
+    const base = searchListings(listings, q, { ...options, limit: 10_000 });
+    const refined = await applyCommuteFilter(base, need, provider);
+    return refined.total;
+  };
+
+  const candidates = relaxationCandidates(query, options);
+  const [before, ...after] = await Promise.all([
+    count(query),
+    ...candidates.map((candidate) => count(candidate.query)),
+  ]);
+
+  return rankRelaxations(candidates, before, after, options);
 }
