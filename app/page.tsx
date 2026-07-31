@@ -14,15 +14,15 @@ type Turn = {
 };
 
 const EXAMPLES = [
-  "我想租个房间，预算 1200 左右",
-  "在 Clementi 附近有什么整租的",
-  "要能做饭，还能带猫",
+  "Looking for a room, budget around $1,200",
+  "Any whole units near Clementi?",
+  "Needs to allow cooking and a cat",
 ];
 
 /** 侧栏里怎么显示一个槽位的值 */
 function renderValue(value: unknown): string {
-  if (Array.isArray(value)) return value.join("、");
-  if (typeof value === "boolean") return value ? "是" : "否";
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "yes" : "no";
   if (typeof value === "number") return value.toLocaleString();
   return String(value);
 }
@@ -74,7 +74,7 @@ export default function Page() {
     } catch {
       setTurns((prev) =>
         prev.map((t, i) =>
-          i === prev.length - 1 ? { ...t, error: "网络请求失败，请重试" } : t,
+          i === prev.length - 1 ? { ...t, error: "Request failed — please try again." } : t,
         ),
       );
     } finally {
@@ -89,14 +89,14 @@ export default function Page() {
     <div className="shell">
       <div className="main">
         <div className="head">
-          <h1>新加坡租房助手</h1>
-          <p>说说你的情况就行 —— 预算、想住哪、什么时候要入住，想到哪说到哪</p>
+          <h1>Singapore Rental Assistant</h1>
+          <p>Just tell me your situation — budget, where you want to live, when you need to move in</p>
         </div>
 
         <div className="thread" ref={threadRef}>
           {turns.length === 0 && (
             <div className="empty-hint">
-              <div>随便说点什么开始，比如：</div>
+              <div>Say anything to get started, for example:</div>
               <div className="examples">
                 {EXAMPLES.map((example) => (
                   <button key={example} type="button" onClick={() => send(example)}>
@@ -139,7 +139,7 @@ export default function Page() {
             <div className="turn agent">
               <div className="status">
                 <span className="dot" />
-                正在理解需求并检索房源…
+                Understanding your requirements and searching…
               </div>
             </div>
           )}
@@ -149,7 +149,7 @@ export default function Page() {
           <textarea
             rows={1}
             value={draft}
-            placeholder="输入你的需求…（Enter 发送，Shift+Enter 换行）"
+            placeholder="Tell me what you're looking for… (Enter to send, Shift+Enter for a new line)"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -159,32 +159,32 @@ export default function Page() {
             }}
           />
           <button type="button" onClick={() => send(draft)} disabled={busy || !draft.trim()}>
-            发送
+            Send
           </button>
         </div>
       </div>
 
       <aside className="side">
-        <h2>我理解的需求</h2>
-        <p className="sub">这是系统当前记住的条件，用它来检索</p>
+        <h2>What I've understood</h2>
+        <p className="sub">These are the conditions currently used to search</p>
 
         {slots.length === 0 ? (
-          <div className="none">还没有确认任何条件</div>
+          <div className="none">Nothing confirmed yet</div>
         ) : (
           <div className="slots">
             {slots.map(([slot, value]) => (
               <div className="slot" key={slot}>
                 <span className="k">{slotLabel(slot)}</span>
-                {conversation.state.meta[slot]?.pinned && <span className="pin">必须</span>}
+                {conversation.state.meta[slot]?.pinned && <span className="pin">must</span>}
                 <span className="v">{renderValue(value)}</span>
                 {/* 点 × 不是偷偷改状态，而是替用户说一句话 —— 走同一条抽取管线，
                     对话记录里也留得下痕迹，用户看到的和系统做的始终一致 */}
                 <button
                   type="button"
                   className="x"
-                  title={`取消「${slotLabel(slot)}」`}
+                  title={`Remove "${slotLabel(slot)}"`}
                   disabled={busy}
-                  onClick={() => send(`不用限制${slotLabel(slot)}了`)}
+                  onClick={() => send(`Drop the ${slotLabel(slot).toLowerCase()} requirement`)}
                 >
                   ✕
                 </button>
@@ -202,7 +202,7 @@ export default function Page() {
               setTurns([]);
             }}
           >
-            重新开始
+            Start over
           </button>
         )}
       </aside>
@@ -228,19 +228,19 @@ function ListingCard({ hit, rank }: { hit: ScoredListing; rank: number }) {
         </span>
         <span className="card-rent">
           {l.monthlyRentSgd === null ? "—" : `$${l.monthlyRentSgd.toLocaleString()}`}
-          <span style={{ color: "var(--mute)", fontWeight: 400 }}> /月</span>
+          <span style={{ color: "var(--mute)", fontWeight: 400 }}> /mo</span>
         </span>
       </div>
 
       <div className="card-meta">
         <span>{l.area}</span>
         {l.district && <span>{l.district}</span>}
-        <span>{l.sizeSqft === null ? "面积未提供" : `${l.sizeSqft} sqft`}</span>
+        <span>{l.sizeSqft === null ? "Size not listed" : `${l.sizeSqft} sqft`}</span>
         <span>
-          {mrt ? `步行 ${mrt.walkMinutes} 分钟到 ${mrt.station}（${mrt.line}）` : "无地铁信息"}
+          {mrt ? `${mrt.walkMinutes} min walk to ${mrt.station} (${mrt.line})` : "No MRT info"}
         </span>
-        <span>最短 {l.leaseMinMonths} 个月</span>
-        <span>{l.availableFrom} 起</span>
+        <span>{l.leaseMinMonths}-month min lease</span>
+        <span>From {l.availableFrom}</span>
       </div>
 
       <div className="chips">

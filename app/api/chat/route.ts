@@ -33,12 +33,12 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return Response.json({ error: "请求体不是合法 JSON" }, { status: 400 });
+    return Response.json({ error: "Request body is not valid JSON" }, { status: 400 });
   }
 
   const userText = body.userText?.trim();
   if (!userText) {
-    return Response.json({ error: "缺少 userText" }, { status: 400 });
+    return Response.json({ error: "Missing userText" }, { status: 400 });
   }
 
   try {
@@ -54,13 +54,13 @@ export async function POST(request: Request) {
   } catch (error) {
     // 把 request_id 带出来 —— 报障时能直接查
     const anyError = error as { status?: number; requestID?: string; message?: string };
-    console.error("[chat] 失败", anyError.requestID ?? "", anyError.message);
+    console.error("[chat] failed", anyError.requestID ?? "", anyError.message);
     const overloaded = anyError.status === 429 || anyError.status === 529;
     return Response.json(
       {
         error: overloaded
-          ? "模型服务暂时繁忙，稍等一下再试"
-          : (anyError.message ?? "处理失败"),
+          ? "The model service is busy right now — give it a moment and try again."
+          : (anyError.message ?? "Something went wrong."),
         requestId: anyError.requestID,
       },
       { status: anyError.status ?? 500 },

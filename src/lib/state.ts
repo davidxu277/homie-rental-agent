@@ -72,36 +72,36 @@ export type StateChange = {
 };
 
 function render(value: unknown): string {
-  if (value === undefined || value === null) return "未设置";
-  if (Array.isArray(value)) return value.join("、");
-  if (typeof value === "boolean") return value ? "是" : "否";
+  if (value === undefined || value === null) return "not set";
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "yes" : "no";
   return String(value);
 }
 
 const SLOT_LABELS: Partial<Record<SlotKey, string>> = {
-  budgetMax: "预算上限",
-  budgetMin: "预算下限",
-  listingType: "出租类型",
-  propertyTypes: "物业类型",
-  bedroomsMin: "卧室数",
-  bathroomsMin: "卫浴数",
-  sizeSqftMin: "面积下限",
-  areas: "区域",
-  districts: "邮区",
-  stations: "地铁站",
-  maxWalkMinutes: "步行时间",
-  furnishing: "家具配置",
-  requireCooking: "需要能做饭",
-  requirePet: "需要可养宠物",
-  requireAircon: "需要空调",
-  requireUtilitiesIncluded: "需要含水电",
-  maxLeaseMinMonths: "可接受的最短租期",
-  moveInBy: "入住时间",
-  occupantType: "租客类型",
-  directOwnerOnly: "只看房东直租",
-  amenities: "设施",
-  tenantGender: "租客性别",
-  tenantNationality: "租客国籍",
+  budgetMax: "Max budget",
+  budgetMin: "Min budget",
+  listingType: "Rental type",
+  propertyTypes: "Property type",
+  bedroomsMin: "Bedrooms",
+  bathroomsMin: "Bathrooms",
+  sizeSqftMin: "Min size",
+  areas: "Areas",
+  districts: "Districts",
+  stations: "MRT stations",
+  maxWalkMinutes: "Walk to MRT",
+  furnishing: "Furnishing",
+  requireCooking: "Cooking allowed",
+  requirePet: "Pet-friendly",
+  requireAircon: "Air-conditioning",
+  requireUtilitiesIncluded: "Utilities included",
+  maxLeaseMinMonths: "Longest lease you'll sign",
+  moveInBy: "Move-in by",
+  occupantType: "Occupant type",
+  directOwnerOnly: "Direct owner only",
+  amenities: "Amenities",
+  tenantGender: "Tenant gender",
+  tenantNationality: "Tenant nationality",
 };
 
 export function slotLabel(slot: SlotKey): string {
@@ -147,7 +147,7 @@ export function applyPatch(
         kind: "rejected",
         from: previous,
         to: update.value,
-        description: `${slotLabel(slot)}：保留用户原话「${render(previous)}」，忽略推断值「${render(update.value)}」`,
+        description: `${slotLabel(slot)}: kept what you told me ("${render(previous)}"), ignored the inferred value ("${render(update.value)}")`,
       });
       continue;
     }
@@ -161,7 +161,7 @@ export function applyPatch(
         kind: "cleared",
         from: previous,
         to: null,
-        description: `${slotLabel(slot)}：已取消（原为 ${render(previous)}）`,
+        description: `${slotLabel(slot)}: removed (was ${render(previous)})`,
       });
       continue;
     }
@@ -182,7 +182,7 @@ export function applyPatch(
         kind: "set",
         from: undefined,
         to: update.value,
-        description: `${slotLabel(slot)}：${render(update.value)}`,
+        description: `${slotLabel(slot)}: ${render(update.value)}`,
       });
     } else if (!unchanged) {
       changes.push({
@@ -190,7 +190,7 @@ export function applyPatch(
         kind: "updated",
         from: previous,
         to: update.value,
-        description: `${slotLabel(slot)}：从 ${render(previous)} 改为 ${render(update.value)}`,
+        description: `${slotLabel(slot)}: changed from ${render(previous)} to ${render(update.value)}`,
       });
     }
 
@@ -200,7 +200,7 @@ export function applyPatch(
         kind: "pinned",
         from: previous,
         to: update.value,
-        description: `${slotLabel(slot)} 被标记为硬性要求，不会建议放宽`,
+        description: `${slotLabel(slot)} marked as a hard requirement — it won't be suggested for relaxing`,
       });
     }
   }
@@ -287,19 +287,19 @@ type SlotProbe = {
 };
 
 const PROBES: SlotProbe[] = [
-  { slot: "budgetMax", prior: 1.0, question: "你的月租预算大概在什么范围？", facet: (l) => l.monthlyRentSgd },
-  { slot: "listingType", prior: 0.95, question: "你是想整租，还是租一个房间？", facet: (l) => l.listingType },
-  { slot: "areas", prior: 0.9, question: "有想住的区域吗？或者你平时要去哪里上班上学？", facet: (l) => l.area },
-  { slot: "moveInBy", prior: 0.7, question: "大概什么时候需要入住？", facet: (l) => l.availableFrom },
-  { slot: "maxLeaseMinMonths", prior: 0.6, question: "打算签多久？", facet: (l) => l.leaseMinMonths },
-  { slot: "propertyTypes", prior: 0.55, question: "对房型有偏好吗？组屋、公寓还是服务式公寓？", facet: (l) => l.propertyType },
-  { slot: "bedroomsMin", prior: 0.5, question: "需要几间卧室？", facet: (l) => l.bedrooms },
-  { slot: "requireCooking", prior: 0.45, question: "需要能开火做饭吗？", facet: (l) => l.cookingAllowed },
-  { slot: "requirePet", prior: 0.4, question: "有宠物要一起住吗？", facet: (l) => l.petFriendly },
-  { slot: "furnishing", prior: 0.35, question: "需要带家具的吗？", facet: (l) => l.furnishing },
-  { slot: "sizeSqftMin", prior: 0.3, question: "对面积有要求吗？", facet: (l) => l.sizeSqft },
-  { slot: "maxWalkMinutes", prior: 0.3, question: "希望走多久能到地铁？", facet: (l) => l.nearestMrt?.walkMinutes ?? null },
-  { slot: "requireUtilitiesIncluded", prior: 0.2, question: "希望水电费包含在租金里吗？", facet: (l) => l.utilitiesIncluded },
+  { slot: "budgetMax", prior: 1.0, question: "What's your monthly budget, roughly?", facet: (l) => l.monthlyRentSgd },
+  { slot: "listingType", prior: 0.95, question: "Are you after a whole unit, or just a room?", facet: (l) => l.listingType },
+  { slot: "areas", prior: 0.9, question: "Any area you have in mind? Or where do you work or study?", facet: (l) => l.area },
+  { slot: "moveInBy", prior: 0.7, question: "When do you need to move in?", facet: (l) => l.availableFrom },
+  { slot: "maxLeaseMinMonths", prior: 0.6, question: "How long are you looking to stay?", facet: (l) => l.leaseMinMonths },
+  { slot: "propertyTypes", prior: 0.55, question: "Any preference on property type — HDB, condo, or serviced apartment?", facet: (l) => l.propertyType },
+  { slot: "bedroomsMin", prior: 0.5, question: "How many bedrooms do you need?", facet: (l) => l.bedrooms },
+  { slot: "requireCooking", prior: 0.45, question: "Do you need to be able to cook?", facet: (l) => l.cookingAllowed },
+  { slot: "requirePet", prior: 0.4, question: "Any pets moving in with you?", facet: (l) => l.petFriendly },
+  { slot: "furnishing", prior: 0.35, question: "Do you need it furnished?", facet: (l) => l.furnishing },
+  { slot: "sizeSqftMin", prior: 0.3, question: "Any minimum size you need?", facet: (l) => l.sizeSqft },
+  { slot: "maxWalkMinutes", prior: 0.3, question: "How far from an MRT station are you willing to walk?", facet: (l) => l.nearestMrt?.walkMinutes ?? null },
+  { slot: "requireUtilitiesIncluded", prior: 0.2, question: "Would you like utilities included in the rent?", facet: (l) => l.utilitiesIncluded },
 ];
 
 /**

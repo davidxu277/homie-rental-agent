@@ -158,7 +158,7 @@ describe("patch 归并：推断不得覆盖原话", () => {
     assert.equal(state.values.listingType, "room", "用户明说的值被推断覆盖了");
     const change = changes.find((c) => c.slot === "listingType");
     assert.equal(change?.kind, "rejected");
-    assert.ok(change?.description.includes("原话"));
+    assert.ok(change?.description.includes("kept what you told me"));
   });
 
   it("用户再次明说时可以改掉自己之前说的", () => {
@@ -359,6 +359,6 @@ describe("变更可复述", () => {
   it("说明里用的是人话字段名，不是代码里的 key", () => {
     const { changes } = applyPatch(emptyState(), { maxLeaseMinMonths: { value: 6 } });
     assert.ok(!changes[0].description.includes("maxLeaseMinMonths"));
-    assert.ok(changes[0].description.includes("租期"));
+    assert.ok(changes[0].description.includes("Longest lease"));
   });
 });

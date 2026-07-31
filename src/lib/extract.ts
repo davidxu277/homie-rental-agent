@@ -307,7 +307,7 @@ export function validatePatch(
   if (typeof raw !== "object" || raw === null) {
     return {
       patch,
-      dropped: [{ slot: "*", value: raw, reason: "不是对象" }],
+      dropped: [{ slot: "*", value: raw, reason: "not an object" }],
       ambiguous: [],
       wantsResultsNow: false,
       wantsRelaxAdvice: false,
@@ -345,12 +345,12 @@ export function validatePatch(
     const slot = rawSlot as SlotKey;
 
     if (!EXTRACTABLE_SLOTS.includes(slot)) {
-      dropped.push({ slot: rawSlot, value, reason: "未知槽位" });
+      dropped.push({ slot: rawSlot, value, reason: "unknown slot" });
       continue;
     }
 
     if (unresolved.has(slot)) {
-      dropped.push({ slot, value, reason: "模型自己标了拿不准，不写入，改为问用户" });
+      dropped.push({ slot, value, reason: "model flagged it as uncertain — not applied, asking the user instead" });
       continue;
     }
 
@@ -358,17 +358,17 @@ export function validatePatch(
 
     if (NUMBER_SLOTS.has(slot)) {
       if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-        dropped.push({ slot, value, reason: "不是正数" });
+        dropped.push({ slot, value, reason: "not a positive number" });
         continue;
       }
     } else if (BOOLEAN_SLOTS.has(slot)) {
       if (typeof value !== "boolean") {
-        dropped.push({ slot, value, reason: "不是布尔值" });
+        dropped.push({ slot, value, reason: "not a boolean" });
         continue;
       }
     } else if (slot === "moveInBy") {
       if (typeof value !== "string" || !DATE_RE.test(value)) {
-        dropped.push({ slot, value, reason: "不是 YYYY-MM-DD" });
+        dropped.push({ slot, value, reason: "not a YYYY-MM-DD date" });
         continue;
       }
     } else if (Array.isArray(value)) {
@@ -379,7 +379,7 @@ export function validatePatch(
         const canonical =
           allowed && typeof item === "string" ? canonicalize(item, allowed) : null;
         if (canonical === null) {
-          dropped.push({ slot, value: item, reason: "不在闭集内" });
+          dropped.push({ slot, value: item, reason: "not in the closed vocabulary" });
         } else {
           kept.push(canonical);
         }
@@ -390,12 +390,12 @@ export function validatePatch(
       const allowed = closedSets[slot];
       const canonical = allowed ? canonicalize(value, allowed) : value;
       if (canonical === null) {
-        dropped.push({ slot, value, reason: "不在闭集内" });
+        dropped.push({ slot, value, reason: "not in the closed vocabulary" });
         continue;
       }
       normalized = canonical;
     } else {
-      dropped.push({ slot, value, reason: "类型不支持" });
+      dropped.push({ slot, value, reason: "unsupported type" });
       continue;
     }
 
@@ -412,25 +412,25 @@ export function validatePatch(
     const step = ADJUSTMENTS[slot];
 
     if (!step) {
-      dropped.push({ slot: rawSlot, value: direction, reason: "该槽位不支持相对调整" });
+      dropped.push({ slot: rawSlot, value: direction, reason: "slot does not support relative adjustment" });
       continue;
     }
     // 同轮给了具体数值就以数值为准 —— 用户说"最多 1000"比"再便宜点"精确
     if (patch[slot] !== undefined) {
-      dropped.push({ slot, value: direction, reason: "同轮已给出具体数值，忽略相对调整" });
+      dropped.push({ slot, value: direction, reason: "an explicit value was given this turn — relative adjustment ignored" });
       continue;
     }
 
     const base = current[slot];
     if (typeof base !== "number") {
       // 没有原值就无从"再便宜"。不要瞎猜一个基准 —— 让 agent 去问用户。
-      dropped.push({ slot, value: direction, reason: "当前没有该约束，无法相对调整" });
+      dropped.push({ slot, value: direction, reason: "no existing value to adjust from" });
       continue;
     }
 
     const next = step(base, direction === "up");
     if (!Number.isFinite(next) || next <= 0) {
-      dropped.push({ slot, value: next, reason: "调整后不是正数" });
+      dropped.push({ slot, value: next, reason: "adjusted value is not positive" });
       continue;
     }
 
@@ -443,14 +443,14 @@ export function validatePatch(
   for (const rawSlot of input.clear ?? []) {
     const slot = rawSlot as SlotKey;
     if (!EXTRACTABLE_SLOTS.includes(slot)) {
-      dropped.push({ slot: rawSlot, value: null, reason: "未知槽位（clear）" });
+      dropped.push({ slot: rawSlot, value: null, reason: "unknown slot (clear)" });
       continue;
     }
     // 同一个槽位既在 set 又在 clear 里时，set 赢。
     // 模型表达"换成另一个值"时经常会同时给出两者（先清掉旧的，再设新的），
     // 如果 clear 后处理就会把新值抹掉 —— 用户看到的是"区域没了"而不是"区域变了"。
     if (patch[slot] !== undefined) {
-      dropped.push({ slot, value: null, reason: "同轮已给出新值，忽略 clear（视为替换）" });
+      dropped.push({ slot, value: null, reason: "a new value was set this turn — clear ignored, treated as replacement" });
       continue;
     }
     patch[slot] = { value: null };

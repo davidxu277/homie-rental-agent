@@ -179,7 +179,7 @@ describe("硬过滤：字段缺失不等于不满足", () => {
     assert.equal(result.total, 2);
     const missing = result.hits.find((h) => h.listing.sizeSqft === null);
     assert.ok(missing);
-    assert.ok(missing.caveats.some((c) => c.includes("面积")));
+    assert.ok(missing.caveats.some((c) => c.includes("Size not listed")));
   });
 
   it("地铁站缺失的房源仍能通过步行时间筛选，但会被标注", () => {
@@ -189,7 +189,7 @@ describe("硬过滤：字段缺失不等于不满足", () => {
     ];
     const result = searchListings(pool, { maxWalkMinutes: 10 });
     assert.equal(result.total, 1);
-    assert.ok(result.hits[0].caveats.some((c) => c.includes("地铁")));
+    assert.ok(result.hits[0].caveats.some((c) => c.includes("Nearest MRT not listed")));
   });
 });
 
@@ -313,7 +313,7 @@ describe("披露事项", () => {
       }),
     ];
     const hit = searchListings(pool, {}).hits[0];
-    assert.ok(hit.caveats.some((c) => c.includes("国籍")));
+    assert.ok(hit.caveats.some((c) => c.includes("nationality preference")));
   });
 
   it("包容性声明不产生警示", () => {
@@ -328,17 +328,17 @@ describe("披露事项", () => {
       }),
     ];
     const hit = searchListings(pool, {}).hits[0];
-    assert.ok(!hit.caveats.some((c) => c.includes("国籍")));
+    assert.ok(!hit.caveats.some((c) => c.includes("nationality preference")));
   });
 
   it("推断出来的邮区要标明不是房东填的", () => {
     const pool = [makeListing({ districtInferred: true })];
-    assert.ok(searchListings(pool, {}).hits[0].caveats.some((c) => c.includes("推断")));
+    assert.ok(searchListings(pool, {}).hits[0].caveats.some((c) => c.includes("inferred")));
   });
 
   it("租金可议是有用信息，会告诉用户", () => {
     const pool = [makeListing({ rentNegotiable: true })];
-    assert.ok(searchListings(pool, {}).hits[0].caveats.some((c) => c.includes("可议")));
+    assert.ok(searchListings(pool, {}).hits[0].caveats.some((c) => c.includes("negotiable")));
   });
 });
 

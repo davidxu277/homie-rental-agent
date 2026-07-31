@@ -39,7 +39,7 @@ describe("校验：闭集是硬边界", () => {
   it("闭集外的地点被丢弃", () => {
     const { patch, dropped } = run({ set: { areas: ["Kent Ridge"] } });
     assert.equal(patch.areas, undefined);
-    assert.equal(dropped[0].reason, "不在闭集内");
+    assert.equal(dropped[0].reason, "not in the closed vocabulary");
   });
 
   // 部分越界时只丢那几项，不要整条扔掉 —— 用户说的另外几个地方是有效的
@@ -67,7 +67,7 @@ describe("校验：闭集是硬边界", () => {
       set: { madeUpSlot: 123 } as unknown as ExtractedPatch["set"],
     });
     assert.deepEqual(patch, {});
-    assert.equal(dropped[0].reason, "未知槽位");
+    assert.equal(dropped[0].reason, "unknown slot");
   });
 });
 
@@ -122,7 +122,7 @@ describe("校验：清除与替换", () => {
   it("clear 里的未知槽位被丢弃", () => {
     const { patch, dropped } = run({ clear: ["nonsense"] });
     assert.deepEqual(patch, {});
-    assert.equal(dropped[0].reason, "未知槽位（clear）");
+    assert.equal(dropped[0].reason, "unknown slot (clear)");
   });
 
   // 模型表达"把 A 换成 B"时经常同时给出 set 和 clear。
@@ -133,7 +133,7 @@ describe("校验：清除与替换", () => {
       clear: ["areas"],
     });
     assert.deepEqual(patch.areas?.value, ["Clementi"]);
-    assert.ok(dropped.some((d) => d.reason.includes("视为替换")));
+    assert.ok(dropped.some((d) => d.reason.includes("treated as replacement")));
   });
 });
 
@@ -190,7 +190,7 @@ describe("相对调整：模型只给方向，数值由固定档位算", () => {
       {},
     );
     assert.equal(patch.budgetMax, undefined);
-    assert.ok(dropped[0].reason.includes("无法相对调整"));
+    assert.ok(dropped[0].reason.includes("no existing value to adjust from"));
   });
 
   it("同轮给了具体数字时，数字优先于相对调整", () => {
@@ -203,7 +203,7 @@ describe("相对调整：模型只给方向，数值由固定档位算", () => {
       { budgetMax: 2500 },
     );
     assert.equal(patch.budgetMax?.value, 1000);
-    assert.ok(dropped.some((d) => d.reason.includes("忽略相对调整")));
+    assert.ok(dropped.some((d) => d.reason.includes("relative adjustment ignored")));
   });
 
   it("不支持相对调整的槽位被丢弃", () => {
@@ -213,7 +213,7 @@ describe("相对调整：模型只给方向，数值由固定档位算", () => {
       {},
     );
     assert.deepEqual(patch, {});
-    assert.ok(dropped[0].reason.includes("不支持相对调整"));
+    assert.ok(dropped[0].reason.includes("does not support relative adjustment"));
   });
 
   // 反复"再便宜点"不能把预算调成 0 或负数
@@ -224,7 +224,7 @@ describe("相对调整：模型只给方向，数值由固定档位算", () => {
       { bedroomsMin: 1 },
     );
     assert.equal(patch.bedroomsMin, undefined);
-    assert.ok(dropped[0].reason.includes("不是正数"));
+    assert.ok(dropped[0].reason.includes("not positive"));
   });
 
   it("幅度和放宽建议共用同一组档位常量", async () => {
@@ -257,7 +257,7 @@ describe("拿不准就问，不要猜", () => {
       set: { budgetMax: 2000 },
       ambiguous: [{ slot: "budgetMax", question: "你的预算大概多少？" }],
     });
-    assert.ok(dropped.some((d) => d.reason.includes("拿不准")));
+    assert.ok(dropped.some((d) => d.reason.includes("uncertain")));
   });
 
   it("没标 ambiguous 的槽位照常写入", () => {
@@ -320,7 +320,7 @@ describe("国籍偏好在抽取层就不存在", () => {
       set: { tenantNationality: "Chinese" } as unknown as ExtractedPatch["set"],
     });
     assert.deepEqual(patch, {});
-    assert.equal(dropped[0].reason, "未知槽位");
+    assert.equal(dropped[0].reason, "unknown slot");
   });
 });
 

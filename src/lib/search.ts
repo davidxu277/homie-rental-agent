@@ -155,7 +155,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const max = query.budgetMax;
     predicates.push({
       key: "budgetMax",
-      label: `月租不超过 $${max.toLocaleString()}`,
+      label: `Under $${max.toLocaleString()}/mo`,
       // 租金为 null 的房源已经被推荐池挡在外面，这里不会遇到
       test: (l) => l.monthlyRentSgd !== null && l.monthlyRentSgd <= max,
     });
@@ -165,7 +165,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const min = query.budgetMin;
     predicates.push({
       key: "budgetMin",
-      label: `月租不低于 $${min.toLocaleString()}`,
+      label: `At least $${min.toLocaleString()}/mo`,
       test: (l) => l.monthlyRentSgd !== null && l.monthlyRentSgd >= min,
     });
   }
@@ -174,7 +174,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const wanted = query.listingType;
     predicates.push({
       key: "listingType",
-      label: wanted === "room" ? "单间出租" : "整套出租",
+      label: wanted === "room" ? "Room rental" : "Whole unit",
       test: (l) => l.listingType === wanted,
     });
   }
@@ -183,7 +183,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const wanted = new Set(query.propertyTypes);
     predicates.push({
       key: "propertyTypes",
-      label: `物业类型为 ${query.propertyTypes.join(" / ")}`,
+      label: `${query.propertyTypes.join(" / ")}`,
       test: (l) => wanted.has(l.propertyType),
     });
   }
@@ -192,7 +192,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const min = query.bedroomsMin;
     predicates.push({
       key: "bedroomsMin",
-      label: `至少 ${min} 间卧室`,
+      label: `${min}+ bedrooms`,
       test: (l) => l.bedrooms >= min,
     });
   }
@@ -201,7 +201,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const min = query.bathroomsMin;
     predicates.push({
       key: "bathroomsMin",
-      label: `至少 ${min} 间卫浴`,
+      label: `${min}+ bathrooms`,
       test: (l) => l.bathrooms >= min,
     });
   }
@@ -210,7 +210,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const min = query.sizeSqftMin;
     predicates.push({
       key: "sizeSqftMin",
-      label: `面积至少 ${min} sqft`,
+      label: `${min}+ sqft`,
       // 面积缺失 ≠ 不满足。放行并在 caveats 里披露，由用户自己判断，
       // 总好过因为房东漏填一个字段就让用户错过一套合适的房子。
       test: (l) => l.sizeSqft === null || l.sizeSqft >= min,
@@ -225,7 +225,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const parts = [...areas, ...districts, ...stations];
     predicates.push({
       key: "place",
-      label: `位于 ${parts.join(" / ")}`,
+      label: `In ${parts.join(" / ")}`,
       test: (l) =>
         areas.has(l.area) ||
         (l.district !== null && districts.has(l.district)) ||
@@ -237,7 +237,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const max = query.maxWalkMinutes;
     predicates.push({
       key: "maxWalkMinutes",
-      label: `步行 ${max} 分钟内到地铁`,
+      label: `${max} min walk to MRT`,
       // 同面积：站点信息缺失不等于不满足
       test: (l) => l.nearestMrt === null || l.nearestMrt.walkMinutes <= max,
     });
@@ -247,24 +247,24 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const wanted = new Set(query.furnishing);
     predicates.push({
       key: "furnishing",
-      label: `家具配置为 ${query.furnishing.join(" / ")}`,
+      label: `${query.furnishing.join(" / ")} furnishing`,
       test: (l) => wanted.has(l.furnishing),
     });
   }
 
   if (query.requireCooking) {
-    predicates.push({ key: "requireCooking", label: "允许做饭", test: (l) => l.cookingAllowed });
+    predicates.push({ key: "requireCooking", label: "Cooking allowed", test: (l) => l.cookingAllowed });
   }
   if (query.requirePet) {
-    predicates.push({ key: "requirePet", label: "可养宠物", test: (l) => l.petFriendly });
+    predicates.push({ key: "requirePet", label: "Pet-friendly", test: (l) => l.petFriendly });
   }
   if (query.requireAircon) {
-    predicates.push({ key: "requireAircon", label: "有空调", test: (l) => l.aircon });
+    predicates.push({ key: "requireAircon", label: "Air-conditioned", test: (l) => l.aircon });
   }
   if (query.requireUtilitiesIncluded) {
     predicates.push({
       key: "requireUtilitiesIncluded",
-      label: "水电已含在租金内",
+      label: "Utilities included",
       test: (l) => l.utilitiesIncluded,
     });
   }
@@ -273,7 +273,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const max = query.maxLeaseMinMonths;
     predicates.push({
       key: "maxLeaseMinMonths",
-      label: `可签 ${max} 个月或更短`,
+      label: `${max}-month lease or shorter`,
       test: (l) => l.leaseMinMonths <= max,
     });
   }
@@ -282,7 +282,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const by = query.moveInBy;
     predicates.push({
       key: "moveInBy",
-      label: `${by} 前可入住`,
+      label: `Available by ${by}`,
       // 日期都是 YYYY-MM-DD，字符串比较即可，不引入时区问题
       test: (l) => l.availableFrom <= by,
     });
@@ -292,21 +292,21 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const wanted = query.occupantType;
     predicates.push({
       key: "occupantType",
-      label: `接受 ${wanted}`,
+      label: `Accepts ${wanted}`,
       test: (l) =>
         l.tenantPreferences.occupantType === "any" || l.tenantPreferences.occupantType === wanted,
     });
   }
 
   if (query.directOwnerOnly) {
-    predicates.push({ key: "directOwnerOnly", label: "房东直租，无中介费", test: (l) => l.directOwner });
+    predicates.push({ key: "directOwnerOnly", label: "Direct owner, no agent fee", test: (l) => l.directOwner });
   }
 
   if (query.amenities?.length) {
     const wanted = query.amenities;
     predicates.push({
       key: "amenities",
-      label: `配备 ${wanted.join(" / ")}`,
+      label: `Has ${wanted.join(" / ")}`,
       test: (l) => wanted.every((a) => l.amenities.includes(a)),
     });
   }
@@ -315,7 +315,7 @@ function buildPredicates(query: SearchQuery): Predicate[] {
     const gender = query.tenantGender;
     predicates.push({
       key: "tenantGender",
-      label: "房东接受该性别租客",
+      label: "Owner accepts your gender",
       // 保护性筛选：排除掉会拒绝这位租客的房源，避免白跑一趟
       test: (l) =>
         l.tenantPreferences.gender === null ||
@@ -372,7 +372,7 @@ function scoreOne(
     components.push({
       dimension: "budgetFit",
       raw: Math.min(1, rent / query.budgetMax),
-      evidence: `$${rent.toLocaleString()}／月，预算上限 $${query.budgetMax.toLocaleString()}`,
+      evidence: `$${rent.toLocaleString()}/mo against a $${query.budgetMax.toLocaleString()} budget`,
     });
   } else {
     components.push({
@@ -380,8 +380,8 @@ function scoreOne(
       raw: null,
       evidence:
         listing.monthlyRentSgd === null
-          ? "无价格数据"
-          : `$${listing.monthlyRentSgd.toLocaleString()}／月（用户未设预算）`,
+          ? "no rent data"
+          : `$${listing.monthlyRentSgd.toLocaleString()}/mo (no budget given)`,
     });
   }
 
@@ -391,10 +391,10 @@ function scoreOne(
     components.push({
       dimension: "commute",
       raw: decay(walk, 3, 20),
-      evidence: `步行 ${walk} 分钟到 ${listing.nearestMrt.station} 站（${listing.nearestMrt.line}）`,
+      evidence: `${walk} min walk to ${listing.nearestMrt.station} (${listing.nearestMrt.line})`,
     });
   } else {
-    components.push({ dimension: "commute", raw: null, evidence: "未提供最近地铁站" });
+    components.push({ dimension: "commute", raw: null, evidence: "no nearest MRT listed" });
   }
 
   // --- 面积：用户给了下限才计分，超出越多越好，封顶在 1.5 倍 ----------------
@@ -409,7 +409,7 @@ function scoreOne(
     components.push({
       dimension: "size",
       raw: null,
-      evidence: listing.sizeSqft === null ? "未提供面积" : "用户未指定面积要求",
+      evidence: listing.sizeSqft === null ? "no size listed" : "no size requirement given",
     });
   }
 
@@ -420,10 +420,10 @@ function scoreOne(
     raw: furnishingRank[listing.furnishing],
     evidence:
       listing.furnishing === "fully"
-        ? "家具家电齐全"
+        ? "fully furnished"
         : listing.furnishing === "partial"
-          ? "部分家具"
-          : "空房未配家具",
+          ? "partially furnished"
+          : "unfurnished",
   });
 
   // --- 设施：用户点名的设施命中比例 -----------------------------------------
@@ -432,10 +432,10 @@ function scoreOne(
     components.push({
       dimension: "amenities",
       raw: hit.length / query.amenities.length,
-      evidence: hit.length > 0 ? `含 ${hit.join("、")}` : "未列出所需设施",
+      evidence: hit.length > 0 ? `has ${hit.join(", ")}` : "none of the requested amenities listed",
     });
   } else {
-    components.push({ dimension: "amenities", raw: null, evidence: "用户未指定设施要求" });
+    components.push({ dimension: "amenities", raw: null, evidence: "no amenity requirement given" });
   }
 
   // --- 新鲜度：挂得越久越可能已经租掉或有问题 -------------------------------
@@ -443,7 +443,7 @@ function scoreOne(
   components.push({
     dimension: "freshness",
     raw: decay(age, 7, 90),
-    evidence: `${Math.round(age)} 天前发布`,
+    evidence: `posted ${Math.round(age)} days ago`,
   });
 
   // --- 入住时间：越贴近用户希望的时间越好 -----------------------------------
@@ -452,13 +452,13 @@ function scoreOne(
     components.push({
       dimension: "availability",
       raw: decay(gap, 0, 60),
-      evidence: listing.isImmediate ? "即时可入住" : `${listing.availableFrom} 起可入住`,
+      evidence: listing.isImmediate ? "available immediately" : `available from ${listing.availableFrom}`,
     });
   } else {
     components.push({
       dimension: "availability",
       raw: null,
-      evidence: listing.isImmediate ? "即时可入住" : `${listing.availableFrom} 起可入住`,
+      evidence: listing.isImmediate ? "available immediately" : `available from ${listing.availableFrom}`,
     });
   }
 
@@ -491,17 +491,17 @@ function scoreOne(
 function buildCaveats(listing: CleanListing, query: SearchQuery): string[] {
   const caveats: string[] = [];
 
-  if (listing.sizeSqft === null) caveats.push("房源未提供面积");
-  if (listing.nearestMrt === null) caveats.push("房源未提供最近地铁站");
-  if (listing.districtInferred) caveats.push("邮区由同区域其他房源推断，非房东填写");
+  if (listing.sizeSqft === null) caveats.push("Size not listed");
+  if (listing.nearestMrt === null) caveats.push("Nearest MRT not listed");
+  if (listing.districtInferred) caveats.push("District inferred from nearby listings, not stated by the owner");
   if (listing.dataQuality.flags.includes("bedrooms_contradiction")) {
-    caveats.push("房源的卧室数与出租类型不一致，以出租类型为准");
+    caveats.push("Bedroom count conflicts with the rental type — rental type is authoritative");
   }
 
   const nationality = listing.tenantPreferences.nationality;
   if (nationality?.kind === "exclusive") {
     // 无论用户有没有告知自己的国籍都要提示 —— 这是房源的既有限制，与用户是谁无关
-    caveats.push(`房东标注了国籍偏好「${nationality.raw}」，可能会影响你的申请`);
+    caveats.push(`Owner states a nationality preference ("${nationality.raw}") — this may affect your application`);
   }
 
   if (
@@ -510,10 +510,10 @@ function buildCaveats(listing: CleanListing, query: SearchQuery): string[] {
     listing.tenantPreferences.gender !== "any" &&
     listing.tenantPreferences.gender !== query.tenantGender
   ) {
-    caveats.push(`房东偏好 ${listing.tenantPreferences.gender} 租客`);
+    caveats.push(`Owner prefers ${listing.tenantPreferences.gender} tenants`);
   }
 
-  if (listing.rentNegotiable) caveats.push("房东标注租金可议");
+  if (listing.rentNegotiable) caveats.push("Rent marked negotiable");
 
   return caveats;
 }
@@ -612,63 +612,63 @@ export const NOTCH_STEP = {
 export const DEFAULT_NOTCHES: RelaxationNotch[] = [
   {
     key: "budgetMax",
-    label: "预算",
+    label: "Budget",
     apply: (q) =>
       q.budgetMax === undefined
         ? null
         : { ...q, budgetMax: Math.round(q.budgetMax * (1 + NOTCH_STEP.budgetPct)) },
     describe: (q) =>
-      `预算提到 $${Math.round((q.budgetMax ?? 0) * (1 + NOTCH_STEP.budgetPct)).toLocaleString()}（+${NOTCH_STEP.budgetPct * 100}%）`,
+      `raise the budget to $${Math.round((q.budgetMax ?? 0) * (1 + NOTCH_STEP.budgetPct)).toLocaleString()} (+${NOTCH_STEP.budgetPct * 100}%)`,
   },
   {
     key: "sizeSqftMin",
-    label: "面积",
+    label: "Size",
     apply: (q) =>
       q.sizeSqftMin === undefined
         ? null
         : { ...q, sizeSqftMin: Math.round(q.sizeSqftMin * (1 - NOTCH_STEP.sizePct)) },
     describe: (q) =>
-      `面积降到 ${Math.round((q.sizeSqftMin ?? 0) * (1 - NOTCH_STEP.sizePct))} sqft（−${NOTCH_STEP.sizePct * 100}%）`,
+      `drop the size floor to ${Math.round((q.sizeSqftMin ?? 0) * (1 - NOTCH_STEP.sizePct))} sqft (−${NOTCH_STEP.sizePct * 100}%)`,
   },
   {
     key: "maxWalkMinutes",
-    label: "步行距离",
+    label: "Walk to MRT",
     apply: (q) =>
       q.maxWalkMinutes === undefined
         ? null
         : { ...q, maxWalkMinutes: q.maxWalkMinutes + NOTCH_STEP.walkMinutes },
-    describe: (q) => `步行放宽到 ${(q.maxWalkMinutes ?? 0) + NOTCH_STEP.walkMinutes} 分钟`,
+    describe: (q) => `allow a ${(q.maxWalkMinutes ?? 0) + NOTCH_STEP.walkMinutes}-minute walk to the MRT`,
   },
   {
     key: "maxLeaseMinMonths",
-    label: "租期",
+    label: "Lease length",
     apply: (q) =>
       q.maxLeaseMinMonths === undefined
         ? null
         : { ...q, maxLeaseMinMonths: q.maxLeaseMinMonths * NOTCH_STEP.leaseFactor },
     describe: (q) =>
-      `接受最短 ${(q.maxLeaseMinMonths ?? 0) * NOTCH_STEP.leaseFactor} 个月的租期`,
+      `accept leases starting from ${(q.maxLeaseMinMonths ?? 0) * NOTCH_STEP.leaseFactor} months`,
   },
   {
     key: "furnishing",
-    label: "家具",
+    label: "Furnishing",
     apply: (q) => {
       if (!q.furnishing?.length || q.furnishing.includes("partial")) return null;
       return { ...q, furnishing: [...q.furnishing, "partial"] };
     },
-    describe: () => "接受部分配家具",
+    describe: () => "accept partially furnished places",
   },
   {
     key: "listingType",
-    label: "出租类型",
+    label: "Rental type",
     apply: (q) => (q.listingType === "whole_unit" ? { ...q, listingType: undefined } : null),
-    describe: () => "把单间也纳入考虑",
+    describe: () => "consider rooms as well as whole units",
   },
   {
     key: "propertyTypes",
-    label: "物业类型",
+    label: "Property type",
     apply: (q) => (q.propertyTypes?.length ? { ...q, propertyTypes: undefined } : null),
-    describe: () => "不限物业类型",
+    describe: () => "open up to any property type",
   },
 ];
 
@@ -723,7 +723,7 @@ export function computeRelaxations(
     results.push({
       key,
       label: key,
-      description: `按你说的调整 ${key} 到 ${JSON.stringify(value)}`,
+      description: `set ${key} to ${JSON.stringify(value)}, as you asked`,
       hitsBefore: before,
       hitsAfter: after,
       delta: after - before,
@@ -754,8 +754,8 @@ export function computeRelaxations(
     const after = searchListings(listings, relaxed, options).total;
     results.push({
       key: "areas",
-      label: "地点",
-      description: `把 ${options.areaExpansion.join("、")} 也纳入范围`,
+      label: "Location",
+      description: `also include ${options.areaExpansion.join(", ")}`,
       hitsBefore: before,
       hitsAfter: after,
       delta: after - before,
