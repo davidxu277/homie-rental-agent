@@ -366,21 +366,22 @@ describe("变更可复述", () => {
 
 // ---------------------------------------------------------------------------
 
-describe("通勤：记得住，但不算约束", () => {
-  it("不计入'够不够检索'的约束数 —— 它筛不了任何东西", () => {
+describe("通勤是一条真约束", () => {
+  it("计入'够不够检索'的约束数 —— 它是筛得最狠的一条", () => {
     const { state } = applyPatch(emptyState(), {
       commute: { value: { destination: "Clementi", mode: "mrt", maxMinutes: 40 } },
     });
-    assert.equal(constraintCount(state), 0, "通勤不该让系统以为已经有条件可以检索了");
-    assert.ok(needsClarification(state), "只说了通勤，仍然需要追问");
+    assert.equal(constraintCount(state), 1);
+    assert.ok(needsClarification(state), "只有一条，还是薄了点");
   });
 
-  it("加上一条真约束后，通勤仍然不参与计数", () => {
+  it("通勤 + 一条别的就够检索了，不该再追问", () => {
     const { state } = applyPatch(emptyState(), {
       commute: { value: { destination: "Clementi", maxMinutes: 40 } },
       budgetMax: { value: 900 },
     });
-    assert.equal(constraintCount(state), 1);
+    assert.equal(constraintCount(state), 2);
+    assert.ok(!needsClarification(state));
   });
 
   it("变更说明是人话，不是 JSON", () => {
@@ -391,8 +392,12 @@ describe("通勤：记得住，但不算约束", () => {
     assert.ok(!changes[0].description.includes("{"), `不该出现原始对象：${changes[0].description}`);
   });
 
-  it("renderCommute 三个字段都缺时也不崩", () => {
-    assert.equal(renderCommute({ destination: "Dover" }), "to Dover");
+  it("renderCommute 补全默认值，并标明哪些是默认的", () => {
+    assert.equal(
+      renderCommute({ destination: "Dover" }),
+      "to Dover, by MRT, under 40 min (default)",
+      "用户没给的部分要显示成系统默认值，不能什么都不说就去筛",
+    );
     assert.equal(
       renderCommute({ destination: "Dover", mode: "bus", maxMinutes: 25 }),
       "to Dover, by BUS, under 25 min",

@@ -92,13 +92,19 @@ Rules:
      "I work near X", "my office is in X", "I study at X", "I need to get to X in under 40 min", "30 minutes by bus to X".
      Put the place in commute.destination, the mode in commute.mode, the tolerance in commute.maxMinutes.
 
+     **destination is not restricted to the areas in the dataset.** It can be any real place in Singapore —
+     a campus (NUS, NTU), an office, a hospital, the airport, a mall. Write it the way it would be searched
+     on a map, using the user's own words: "nus student" → NUS, "the airport" → Changi Airport.
+     Never substitute a place the user did not name.
+
      **mode and maxMinutes are only ever set from words the user actually said.** They are hard filters —
      inventing them silently excludes listings the user never asked to exclude, and they cannot tell.
      - No mention of how they travel → leave mode out. Don't assume driving because it's a family,
        or the MRT because it's Singapore. "The children will study around Bukit Timah" says nothing about transport.
      - No number and no time unit → leave maxMinutes out. "somewhere close", "nearby", "not too far",
        "location matters a lot" are **not** durations. Only "20 minutes", "half an hour", "under 40 min" are.
-     - Setting just commute.destination is completely fine and is the common case.
+     - Setting just commute.destination is completely fine and is the common case. The system then checks
+       real journey times and keeps what is within its own default tolerance — you do not need to supply a number.
    - **areas / districts / stations** — the user says where they want to **live**:
      "I want to live in Clementi", "anywhere in the east", "near Bedok MRT".
    - **maxWalkMinutes** — only ever "X minutes' **walk** to the MRT / to a station". Never a travel time.
@@ -108,7 +114,8 @@ Rules:
    meaning "the property must sit in this area", which is far narrower than "near there". A user who says
    "the kids study around Bukit Timah, somewhere close would be great" would happily take a 30-minute ride from
    another neighbourhood — writing areas = [Bukit Timah] silently throws all of those away, and they can't see why.
-   Set commute.destination alone; the system ranks by journey time, so nearer places surface first without excluding anyone.
+   Set commute.destination alone; the system checks real journey times, drops the genuinely far ones and ranks the rest
+   by how long the trip takes, so nearer places surface first — without pinning the search to one neighbourhood.
 
    Use areas / districts / stations **only** when the user says where they want to live:
    "I want to live in Clementi", "anywhere in the east", "near Bedok MRT", "show me places in D15".
@@ -317,11 +324,15 @@ const REPLY_SYSTEM = `You are a Singapore rental assistant. The user is looking 
 ## Commute: check the commute field before you say anything about journey times
 The commute field tells you exactly what happened this turn. **Read it. Never assume.**
 
-- **commute.applied = true** — journey times are real and the results ARE filtered by them.
+- **commute.applied = true** — journey times are real and the results ARE filtered by them, at commute.maxMinutes.
   commuteMinutes gives each listing's door-to-door time (walk to the station + the train ride).
   Use those numbers freely: "38 min door-to-door to Raffles Place". They come from live transit data.
   If commute.unverified is above 0, that many listings are still in the results without a checked journey time
   (no station on the listing, or no route found) — mention it only if it matters to the choice.
+  - **commute.assumedMax = true** — the user never named a tolerance, so the system used its own default of
+    commute.maxMinutes minutes. **Say so the first time it happens**, in one clause: "I've kept these within
+    40 minutes of NUS by MRT — tell me if you'd trade a longer trip for more choice." Never present a default
+    the user didn't choose as if they had asked for it, and never leave it unmentioned: it is removing listings.
 - **commute.applied = false with a reason** — the journey time could not be worked out, so the results are
   **not** filtered by it. Say so plainly in one clause: "I couldn't check journey times just now, so these
   aren't filtered by your 40-minute commute." Then let them judge from the station and line on each card.
@@ -559,6 +570,8 @@ export async function generateReply(options: ReplyOptions): Promise<ReplyOutcome
                 commute: options.commute
                   ? {
                       applied: options.commute.applied,
+                      maxMinutes: options.commute.maxMinutes,
+                      assumedMax: options.commute.assumedMax,
                       reason: options.commute.reason,
                       unverified: options.commute.unverified,
                     }

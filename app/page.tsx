@@ -49,8 +49,13 @@ export default function Page() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  /** 上一轮通勤有没有真的参与筛选 —— 决定侧栏标不标"未筛选" */
-  const [commuteApplied, setCommuteApplied] = useState(false);
+  /**
+   * 上一次**真的检索过**的那一轮，通勤有没有参与筛选。
+   *
+   * null = 还没检索过（比如这一轮是反问），此时不该显示"未筛选"——
+   * 那会让用户以为通勤失效了，其实只是还没查。
+   */
+  const [commuteApplied, setCommuteApplied] = useState<boolean | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -90,7 +95,7 @@ export default function Page() {
       setConversation(data.conversation);
       // Map 经过 JSON 往返会变成对象，这里按对象用
       const minutes = data.commute?.minutes as unknown as Record<string, number> | undefined;
-      setCommuteApplied(data.commute?.applied ?? false);
+      if (data.commute) setCommuteApplied(data.commute.applied);
       setTurns((prev) =>
         prev.map((t, i) =>
           i === index
@@ -216,7 +221,7 @@ export default function Page() {
                 {conversation.state.meta[slot]?.pinned && <span className="pin">must</span>}
                 {/* 通勤记下来了但筛不了（数据没有站间行程时间）—— 必须让用户看见这个区别，
                     否则他会以为结果已经按通勤过滤过了 */}
-                {slot === "commute" && !commuteApplied && (
+                {slot === "commute" && commuteApplied === false && (
                   <span className="pin unfiltered" title="No journey-time data available, so this isn't used as a filter">
                     not filtered
                   </span>

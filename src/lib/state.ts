@@ -9,6 +9,7 @@
  * 状态里能存的，就是检索能用的，字段改名会在编译期报错。
  */
 
+import { DEFAULT_MAX_COMMUTE_MINUTES } from "./commute.ts";
 import type { CleanListing } from "./types.ts";
 import { searchListings, type CommuteNeed, type SearchQuery } from "./search.ts";
 
@@ -73,8 +74,14 @@ export type StateChange = {
 
 export function renderCommute(c: CommuteNeed): string {
   const parts = [`to ${c.destination}`];
-  if (c.mode) parts.push(`by ${c.mode.toUpperCase()}`);
-  if (c.maxMinutes !== undefined) parts.push(`under ${c.maxMinutes} min`);
+  parts.push(`by ${(c.mode ?? "mrt").toUpperCase()}`);
+  // 用户没给上限时系统按 40 分钟卡 —— 侧栏必须写出来并标明是默认值，
+  // 否则它就成了又一条用户看不见却真的在筛房源的约束
+  parts.push(
+    c.maxMinutes === undefined
+      ? `under ${DEFAULT_MAX_COMMUTE_MINUTES} min (default)`
+      : `under ${c.maxMinutes} min`,
+  );
   return parts.join(", ");
 }
 
@@ -272,14 +279,14 @@ export function slotsChangedOnTurn(state: RequirementState, turn: number): SlotK
 const MIN_CONSTRAINTS_TO_SEARCH = 2;
 
 /**
- * 不参与"够不够筛选"计数。
+ * 不参与"够不够筛选"计数 —— 保护性、展示性字段，筛不掉任何房源。
  *
- * tenantGender / tenantNationality 是保护性、展示性字段；
- * commute 则是**记录了但筛不了**（数据没有站间行程时间）——
- * 把它算进约束数，会让"我在 X 上班，40 分钟内"这种话看起来提供了两条约束，
- * 系统于是直接去检索，实际上一条有效条件都没有。
+ * commute 一度也在这里，理由是"记录了但筛不了"（数据没有站间行程时间）。
+ * 接入真实行程时间之后这条不成立了：说一句"我在 Jurong East 上班"就能砍掉
+ * 半个岛的房源，这是全部槽位里最有分量的一条。再把它当零分会让系统在
+ * 明明可以直接给结果的时候还去追问。
  */
-const NON_NARROWING_SLOTS = new Set<SlotKey>(["tenantGender", "tenantNationality", "commute"]);
+const NON_NARROWING_SLOTS = new Set<SlotKey>(["tenantGender", "tenantNationality"]);
 
 /** 状态里有几条真正能用来筛选的约束 */
 export function constraintCount(state: RequirementState): number {

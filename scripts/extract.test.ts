@@ -399,23 +399,49 @@ describe("通勤目的地是独立槽位", () => {
     assert.equal(dropped.length, 0);
   });
 
-  it("目的地也走闭集校验，编造的地名整条丢弃", () => {
-    const { patch, dropped } = run({
-      set: { commute: { destination: "Atlantis", maxMinutes: 30 } },
-    });
+  it("目的地不走闭集 —— 词表外的真实地点照样收下", () => {
+    const value = run(
+      { set: { commute: { destination: "NUS", maxMinutes: 30 } } },
+      "i'm a nus student, find me a room where i can go to school within 30 mins",
+    ).patch.commute?.value as { destination: string; maxMinutes?: number };
+    assert.equal(value.destination, "NUS", "NUS 不在房源词表里，但它是个真实目的地");
+    assert.equal(value.maxMinutes, 30);
+  });
+
+  it("口语补全成正式名也认 —— 实词对得上就算有依据", () => {
+    const value = run(
+      { set: { commute: { destination: "Changi Airport" } } },
+      "I work at the airport",
+    ).patch.commute?.value as { destination: string };
+    assert.equal(value.destination, "Changi Airport");
+  });
+
+  it("用户没提过的目的地整条丢弃", () => {
+    const { patch, dropped } = run(
+      { set: { commute: { destination: "Atlantis", maxMinutes: 30 } } },
+      "I need a place under $2,000",
+    );
     assert.equal(patch.commute, undefined);
-    assert.ok(dropped.some((d) => d.reason.includes("closed vocabulary")));
+    assert.ok(dropped.some((d) => d.slot === "commute.destination"));
+  });
+
+  it("方位词不足以给编造的目的地背书", () => {
+    const { patch } = run(
+      { set: { commute: { destination: "Jurong East" } } },
+      "somewhere on the east side would be nice",
+    );
+    assert.equal(patch.commute, undefined, '"east" 是通用方位词，不算依据');
   });
 
   it("站名和区域名都能当目的地", () => {
     assert.equal(
-      (run({ set: { commute: { destination: "Clementi" } } }).patch.commute?.value as
-        { destination: string }).destination,
+      (run({ set: { commute: { destination: "Clementi" } } }, "I work in Clementi").patch.commute
+        ?.value as { destination: string }).destination,
       "Clementi",
     );
     assert.equal(
-      (run({ set: { commute: { destination: "dover" } } }).patch.commute?.value as
-        { destination: string }).destination,
+      (run({ set: { commute: { destination: "dover" } } }, "my office is at dover").patch.commute
+        ?.value as { destination: string }).destination,
       "Dover",
       "应当大小写归一",
     );
@@ -424,7 +450,7 @@ describe("通勤目的地是独立槽位", () => {
   it("方式认不出时只丢方式，目的地保留 —— 部分信息比零信息有用", () => {
     const value = run(
       { set: { commute: { destination: "Clementi", mode: "teleport", maxMinutes: 20 } } },
-      "I teleport there in 20 minutes",
+      "I teleport to Clementi in 20 minutes",
     ).patch.commute?.value as { destination: string; mode?: string; maxMinutes?: number };
     assert.equal(value.destination, "Clementi");
     assert.equal(value.mode, undefined);
@@ -432,9 +458,10 @@ describe("通勤目的地是独立槽位", () => {
   });
 
   it("非法的分钟数被忽略，不影响其余字段", () => {
-    const value = run({
-      set: { commute: { destination: "Clementi", maxMinutes: -5 } },
-    }).patch.commute?.value as { destination: string; maxMinutes?: number };
+    const value = run(
+      { set: { commute: { destination: "Clementi", maxMinutes: -5 } } },
+      "I work in Clementi",
+    ).patch.commute?.value as { destination: string; maxMinutes?: number };
     assert.equal(value.destination, "Clementi");
     assert.equal(value.maxMinutes, undefined);
   });
@@ -471,12 +498,12 @@ describe("通勤的方式和时长要有原话支撑", () => {
 
   it("没提交通工具和时长时，两个都被丢弃，目的地保留", () => {
     const { patch, dropped } = validatePatch(
-      { set: { commute: { destination: "Clementi", mode: "drive", maxMinutes: 20 } } },
+      { set: { commute: { destination: "Bukit Timah", mode: "drive", maxMinutes: 20 } } },
       VOCAB,
       {},
       SAID_NOTHING,
     );
-    assert.deepEqual(patch.commute?.value, { destination: "Clementi" });
+    assert.deepEqual(patch.commute?.value, { destination: "Bukit Timah" });
     assert.equal(dropped.filter((d) => d.slot.startsWith("commute.")).length, 2);
   });
 
@@ -485,7 +512,7 @@ describe("通勤的方式和时长要有原话支撑", () => {
       { set: { commute: { destination: "Clementi", mode: "drive", maxMinutes: 20 } } },
       VOCAB,
       {},
-      "I drive to work and need to be within 20 minutes",
+      "I drive to work in Clementi and need to be within 20 minutes",
     );
     assert.deepEqual(patch.commute?.value, {
       destination: "Clementi",
@@ -495,7 +522,11 @@ describe("通勤的方式和时长要有原话支撑", () => {
   });
 
   it("「close / nearby / not too far」都不是时长", () => {
-    for (const text of ["somewhere close", "nearby would be nice", "not too far please"]) {
+    for (const text of [
+      "my office is in Clementi, somewhere close",
+      "I work in Clementi, nearby would be nice",
+      "Clementi is where I work, not too far please",
+    ]) {
       const { patch } = validatePatch(
         { set: { commute: { destination: "Clementi", maxMinutes: 15 } } },
         VOCAB,
@@ -515,7 +546,7 @@ describe("通勤的方式和时长要有原话支撑", () => {
       { set: { commute: { destination: "Clementi", maxMinutes: 20 } } },
       VOCAB,
       {},
-      "We want a 3-bedroom condo with a budget of $7,000",
+      "We want a 3-bedroom condo near my Clementi office, budget $7,000",
     );
     assert.equal((patch.commute?.value as { maxMinutes?: number }).maxMinutes, undefined);
   });
@@ -525,7 +556,7 @@ describe("通勤的方式和时长要有原话支撑", () => {
       { set: { commute: { destination: "Clementi", maxMinutes: 30 } } },
       VOCAB,
       {},
-      "I'd like to be within half an hour of the office",
+      "I'd like to be within half an hour of the Clementi office",
     );
     assert.equal((patch.commute?.value as { maxMinutes: number }).maxMinutes, 30);
   });
@@ -546,9 +577,9 @@ describe("通勤的方式和时长要有原话支撑", () => {
 
   it("坐地铁、坐巴士、走路都认得出来", () => {
     const cases: Array<[string, string]> = [
-      ["I take the MRT to work", "mrt"],
-      ["I go by bus", "bus"],
-      ["I walk to the office", "walk"],
+      ["I take the MRT to work in Clementi", "mrt"],
+      ["I go by bus to Clementi", "bus"],
+      ["I walk to the office in Clementi", "walk"],
     ];
     for (const [text, mode] of cases) {
       const { patch } = validatePatch(

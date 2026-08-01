@@ -14,6 +14,7 @@ import { describe, it } from "node:test";
 import {
   applyCommuteFilter,
   computeRelaxationsWithCommute,
+  DEFAULT_MAX_COMMUTE_MINUTES,
   toSummary,
 } from "../src/lib/commute.ts";
 import { computeRelaxations } from "../src/lib/search.ts";
@@ -87,7 +88,7 @@ describe("通勤过滤", () => {
     assert.equal(out.commute.minutes.get("C"), 37);
   });
 
-  it("只给目的地、没给容忍度时不筛，但仍然算出分钟数展示", async () => {
+  it("只给目的地、没给容忍度时按默认 40 分钟筛", async () => {
     const base = result([listing("A", "Bedok", 5), listing("B", "Pasir Ris", 5)]);
     const out = await applyCommuteFilter(
       base,
@@ -95,9 +96,23 @@ describe("通勤过滤", () => {
       stub({ Bedok: 30, "Pasir Ris": 50 }),
     );
 
-    assert.equal(out.hits.length, 2, "没有阈值就不该排除任何房源");
-    assert.equal(out.commute.applied, false, "没筛就不能说筛了");
-    assert.equal(out.commute.minutes.get("B"), 55, "但分钟数照样要给用户看");
+    assert.equal(out.hits.length, 1, "55 分钟超过默认上限，该被排除");
+    assert.equal(out.hits[0].listing.id, "A");
+    assert.equal(out.commute.applied, true);
+    assert.equal(out.commute.maxMinutes, DEFAULT_MAX_COMMUTE_MINUTES);
+    assert.equal(out.commute.assumedMax, true, "上限是系统给的，必须能被界面标出来");
+    assert.equal(out.commute.minutes.get("B"), 55, "被排除的也要有分钟数，才能解释为什么");
+  });
+
+  it("用户给了上限就用用户的，并且不标成默认值", async () => {
+    const out = await applyCommuteFilter(
+      result([listing("A", "Bedok", 5)]),
+      { destination: "Raffles Place", maxMinutes: 60 },
+      stub({ Bedok: 50 }),
+    );
+    assert.equal(out.hits.length, 1, "55 分钟在用户自己给的 60 分钟以内");
+    assert.equal(out.commute.maxMinutes, 60);
+    assert.equal(out.commute.assumedMax, false);
   });
 
   it("没有 commute 时完全不碰结果，也不调外部服务", async () => {
@@ -405,20 +420,19 @@ describe("出行方式", () => {
  * 住址限制挡住的。
  */
 describe("只给目的地时按通勤排序，不排除任何人", () => {
-  it("近的排前面，远的仍然在结果里", async () => {
+  it("近的排前面，够近的都还在结果里", async () => {
     const base = result([
-      listing("FAR", "Far", 2), // 2 + 60 = 62 分钟，但走到地铁站只要 2 分钟
+      listing("FAR", "Far", 2), // 2 + 30 = 32 分钟，但走到地铁站只要 2 分钟
       listing("NEAR", "Near", 8), // 8 + 10 = 18 分钟
     ]);
     const out = await applyCommuteFilter(
       base,
-      { destination: "Bukit Timah" }, // 没有 maxMinutes
-      stub({ Far: 60, Near: 10 }),
+      { destination: "Bukit Timah" }, // 没有 maxMinutes，走默认 40 分钟
+      stub({ Far: 30, Near: 10 }),
     );
 
-    assert.equal(out.hits.length, 2, "没给时长就不该排除任何房源");
-    assert.equal(out.hits[0].listing.id, "NEAR", "18 分钟的该排在 62 分钟前面");
-    assert.equal(out.commute.applied, false, "这不是过滤，只是排序");
+    assert.equal(out.hits.length, 2, "两套都在 40 分钟以内");
+    assert.equal(out.hits[0].listing.id, "NEAR", "18 分钟的该排在 32 分钟前面");
   });
 
   it("排序用的是门到门时间，不是走到地铁站的时间", async () => {
@@ -427,7 +441,7 @@ describe("只给目的地时按通勤排序，不排除任何人", () => {
     const out = await applyCommuteFilter(
       base,
       { destination: "X" },
-      stub({ Far: 60, Near: 10 }),
+      stub({ Far: 30, Near: 10 }),
     );
     const near = out.hits.find((h) => h.listing.id === "NEAR");
     const far = out.hits.find((h) => h.listing.id === "FAR");

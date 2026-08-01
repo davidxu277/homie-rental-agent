@@ -137,6 +137,45 @@ const DURATION_EVIDENCE =
   /\b(min|mins|minute|minutes|hour|hours|hr|hrs|half an hour|quarter of an hour)\b/i;
 
 /**
+ * 地名里那些**不足以单独作为证据**的通用词。
+ *
+ * 目的地证据用的是「任一实词出现即可」，否则 "Changi Airport"（用户只说了
+ * "the airport"）这种正当情况会被误杀。但方位词和通用后缀太容易撞上 ——
+ * 用户说 "East Coast" 就能给一个编造的 "Jurong East" 背书。
+ */
+const GENERIC_PLACE_TOKENS = new Set([
+  "north", "south", "east", "west", "central", "upper", "lower",
+  "mrt", "station", "singapore", "area", "district", "road", "street", "avenue",
+]);
+
+/** 用于词面比对的规范化：小写、去标点、压空白 */
+function normalizeForEvidence(text: string): string {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/**
+ * 目的地必须在用户原话里找得到 —— 这是目的地开放闭集之后唯一的防线。
+ *
+ * 整串命中（"jurong east" 出现在句子里）显然算。此外允许**任一实词**命中，
+ * 因为模型经常把口语补全成正式名："the airport" → "Changi Airport"、
+ * "my school" + 上文的 NUS → "NUS Kent Ridge"。完全编造的目的地不会和
+ * 用户说的任何词沾边，一个实词都对不上。
+ */
+function destinationSupported(destination: string, raw: string, userText: string): boolean {
+  const text = ` ${normalizeForEvidence(userText)} `;
+  for (const candidate of new Set([destination, raw])) {
+    const normalized = normalizeForEvidence(candidate);
+    if (!normalized) continue;
+    if (text.includes(` ${normalized} `)) return true;
+    for (const token of normalized.split(" ")) {
+      if (token.length < 3 || GENERIC_PLACE_TOKENS.has(token)) continue;
+      if (new RegExp(`\\b${token}`, "i").test(text)) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 通勤的**方式**和**时长上限**必须能在用户原话里找到依据。
  *
  * 起因是一次真实的编造：用户说 "the children will study around Bukit Timah,
@@ -153,10 +192,18 @@ const DURATION_EVIDENCE =
  */
 function evidenceFilter(
   need: CommuteNeed,
+  raw: string,
   userText: string,
   current: CommuteNeed | undefined,
-): { need: CommuteNeed; dropped: Array<{ field: string; value: unknown }> } {
+): { need: CommuteNeed | null; dropped: Array<{ field: string; value: unknown }> } {
   const dropped: Array<{ field: string; value: unknown }> = [];
+
+  // 目的地没依据就整条作废 —— 没有目的地的通勤约束根本不成立，
+  // 而一个编造的目的地会显示在侧栏、还会真的筛掉房源，比没有更糟
+  if (current?.destination !== need.destination && !destinationSupported(need.destination, raw, userText)) {
+    return { need: null, dropped: [{ field: "commute.destination", value: need.destination }] };
+  }
+
   const kept: CommuteNeed = { destination: need.destination };
 
   if (need.mode !== undefined) {
@@ -177,21 +224,34 @@ function evidenceFilter(
 /**
  * 校验通勤对象。返回 CommuteNeed，或者一句失败原因（进 dropped）。
  *
- * destination 走的是**区域 ∪ 站名 ∪ 邮区的并集**：用户口中的目的地可能是
- * 公司所在的片区（"Raffles Place"）、也可能是个地铁站名，两者在这份数据里
- * 本来就大量重名。落不进闭集就整条丢掉 —— 一个编造的目的地比没有目的地更糟，
- * 它会显示在侧栏上，让用户以为系统听懂了。
+ * **目的地不走闭集** —— 这是本项目里唯一一个刻意开放的字段。
+ *
+ * 它一度走「区域 ∪ 站名 ∪ 邮区」的闭集，理由是防编造。但这条防线拦错了东西：
+ * 用户要去的地方本来就常常不在房源数据里 —— NUS、樟宜机场、某家医院。
+ * 真实翻车："i'm a nus student, find me a room where i can go to school
+ * within 30mins" —— NUS 不在词表，整条 commute 被丢掉，30 分钟这个用户最在乎
+ * 的条件凭空消失，界面上连个痕迹都没有。作业原文给的示例问题
+ * "how far is it from NUS?" 同样会被这条规则吃掉。
+ *
+ * 换成的防线是**词面证据**（见 evidenceFilter）：目的地必须在用户原话里找得到。
+ * 能不能真的算出路线交给 Google 判断，解析不了就诚实降级 —— 这比拿一份
+ * 房源词表去猜世界上有哪些地方要准得多。
  */
-function parseCommute(value: unknown, vocab: Vocab): CommuteNeed | string {
+function parseCommute(value: unknown, vocab: Vocab): { need: CommuteNeed; raw: string } | string {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return "commute is not an object";
   }
   const raw = value as Record<string, unknown>;
 
   if (typeof raw.destination !== "string") return "commute.destination is missing";
+  const text = raw.destination.trim().replace(/\s+/g, " ");
+  if (text.length < 2 || text.length > 60 || !/\p{L}/u.test(text)) {
+    return "commute.destination is not a usable place name";
+  }
+  // 落得进词表就归一化（大小写、别名统一，侧栏显示得好看一点）；
+  // 落不进就原样保留，交给地图服务去解析
   const places = [...vocab.areas, ...vocab.stations, ...vocab.districts];
-  const destination = canonicalize(raw.destination, places);
-  if (destination === null) return "commute.destination is not in the closed vocabulary";
+  const destination = canonicalize(text, places) ?? text;
 
   const need: CommuteNeed = { destination };
 
@@ -209,7 +269,7 @@ function parseCommute(value: unknown, vocab: Vocab): CommuteNeed | string {
     }
   }
 
-  return need;
+  return { need, raw: text };
 }
 
 const PROPERTY_TYPES = ["HDB", "Condominium", "Landed", "Serviced Apartment"];
@@ -488,8 +548,8 @@ export function validatePatch(
         dropped.push({ slot, value, reason: parsed });
         continue;
       }
-      // 目的地过闭集，方式和时长过词面证据 —— 两道都是客观检验，不靠模型自律
-      const checked = evidenceFilter(parsed, userText, current.commute);
+      // 目的地、方式、时长三项全部过词面证据 —— 客观检验，不靠模型自律
+      const checked = evidenceFilter(parsed.need, parsed.raw, userText, current.commute);
       for (const item of checked.dropped) {
         dropped.push({
           slot: item.field,
@@ -497,6 +557,7 @@ export function validatePatch(
           reason: "not stated by the user — no wording in their message supports it",
         });
       }
+      if (checked.need === null) continue;
       normalized = checked.need;
     } else if (Array.isArray(value)) {
       // 闭集数组：逐项归一化，越界项单独丢弃而不是整条丢掉
