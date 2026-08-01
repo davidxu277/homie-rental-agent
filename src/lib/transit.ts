@@ -12,7 +12,8 @@
  *     总时长 = listing.nearestMrt.walkMinutes   （来自房源数据）
  *            + transit(该站 → 目的地)            （来自 Google）
  *
- * 走到地铁站那一段仍然完全来自房源自己的字段。
+ * 走到地铁站那一段仍然完全来自房源自己的字段。没有 nearestMrt 的房源
+ * （500 套里有 6 套）改用它所在的区域当起点，精度差一档但算得出来。
  *
  * 为什么是 Distance Matrix 而不是逐条查路线：它一次请求能带 25 个起点，
  * 85 个站分 4 次就查完，并发下大约 1 秒 —— 所以不需要"先缩小候选再算通勤"
@@ -50,9 +51,24 @@ export function departureTime(now = new Date()): number {
   return Math.floor(d.getTime() / 1000);
 }
 
-/** 站名 → 可供地理编码的查询串。加上国家限定，避免撞上别国同名站 */
-function originQuery(station: string): string {
-  return `${station} MRT Station, Singapore`;
+/**
+ * 一个起点。
+ *
+ * key 是调用方用来对回结果的标识；query 是真正拿去地理编码的字符串。
+ * 两者分开，是因为起点**不一定是地铁站** —— 6 套房源没有 nearestMrt，
+ * 只能拿它们所在的区域当位置。区域名不能加 "MRT Station" 后缀，
+ * 否则 "Bukit Panjang, Singapore" 会被拧成一个未必存在的站。
+ */
+export type TransitOrigin = { key: string; query: string };
+
+/** 站名 → 查询串。加上国家限定，避免撞上别国同名站 */
+export function stationOrigin(station: string): TransitOrigin {
+  return { key: station, query: `${station} MRT Station, Singapore` };
+}
+
+/** 区域名 → 查询串。精度不如站点（落在片区中心而不是门口），但远好过算不出来 */
+export function areaOrigin(area: string): TransitOrigin {
+  return { key: `area:${area}`, query: `${area}, Singapore` };
 }
 
 /**
@@ -81,7 +97,7 @@ const GOOGLE_MODE: Record<string, string> = {
 };
 
 export type TransitLookup = {
-  /** 站名 → 到目的地的分钟数。查不到的站不出现在这里 */
+  /** 起点 key → 到目的地的分钟数。查不到的起点不出现在这里 */
   minutes: Map<string, number>;
   /** 目的地是否解析成功。false 时 minutes 一定是空的 */
   resolved: boolean;
@@ -90,7 +106,7 @@ export type TransitLookup = {
 };
 
 export interface TransitProvider {
-  lookup(stations: string[], destination: string, mode?: string): Promise<TransitLookup>;
+  lookup(origins: TransitOrigin[], destination: string, mode?: string): Promise<TransitLookup>;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +150,7 @@ export class GoogleTransitProvider implements TransitProvider {
   }
 
   async lookup(
-    stations: string[],
+    origins: TransitOrigin[],
     destination: string,
     mode?: string,
   ): Promise<TransitLookup> {
@@ -146,16 +162,16 @@ export class GoogleTransitProvider implements TransitProvider {
       return { minutes, resolved: false, error: "destination could not be resolved" };
     }
 
-    const missing: string[] = [];
-    for (const station of stations) {
-      const cached = this.cache.get(`${station}|${destination}|${googleMode}`);
-      if (cached === undefined) missing.push(station);
-      else minutes.set(station, cached);
+    const missing: TransitOrigin[] = [];
+    for (const origin of origins) {
+      const cached = this.cache.get(`${origin.query}|${destination}|${googleMode}`);
+      if (cached === undefined) missing.push(origin);
+      else minutes.set(origin.key, cached);
     }
 
     if (missing.length === 0) return { minutes, resolved: true };
 
-    const batches: string[][] = [];
+    const batches: TransitOrigin[][] = [];
     for (let i = 0; i < missing.length; i += ORIGINS_PER_REQUEST) {
       batches.push(missing.slice(i, i + ORIGINS_PER_REQUEST));
     }
@@ -177,14 +193,14 @@ export class GoogleTransitProvider implements TransitProvider {
       anyResolved = true;
       for (const [offset, seconds] of result.durations.entries()) {
         if (seconds === null) continue;
-        const station = batches[index][offset];
+        const origin = batches[index][offset];
         const value = Math.round(seconds / 60);
-        this.cache.set(`${station}|${destination}|${googleMode}`, value);
-        minutes.set(station, value);
+        this.cache.set(`${origin.query}|${destination}|${googleMode}`, value);
+        minutes.set(origin.key, value);
       }
     }
 
-    // 一个站都没查到 ⇒ 目的地本身有问题，记下来别再浪费请求
+    // 一个起点都没查到 ⇒ 目的地本身有问题，记下来别再浪费请求
     if (!anyResolved && minutes.size === 0) {
       this.unresolvable.add(destination);
       return { minutes, resolved: false, error: error ?? "no route data returned" };
@@ -194,13 +210,13 @@ export class GoogleTransitProvider implements TransitProvider {
   }
 
   private async fetchBatch(
-    stations: string[],
+    origins: TransitOrigin[],
     destination: string,
     depart: number,
     mode: string,
   ): Promise<{ durations: Array<number | null> } | { error: string }> {
     const url = new URL("https://maps.googleapis.com/maps/api/distancematrix/json");
-    url.searchParams.set("origins", stations.map(originQuery).join("|"));
+    url.searchParams.set("origins", origins.map((o) => o.query).join("|"));
     url.searchParams.set("destinations", destinationQuery(destination));
     url.searchParams.set("mode", mode);
     url.searchParams.set("key", this.apiKey);

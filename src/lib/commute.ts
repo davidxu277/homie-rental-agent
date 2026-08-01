@@ -28,7 +28,7 @@ import {
   type SearchResult,
 } from "./search.ts";
 import type { CleanListing } from "./types.ts";
-import type { TransitProvider } from "./transit.ts";
+import { areaOrigin, stationOrigin, type TransitOrigin, type TransitProvider } from "./transit.ts";
 
 /**
  * 用户说了目的地却没给容忍度时，默认用多少分钟卡。
@@ -98,6 +98,26 @@ export type CommuteNeedInput = {
   maxMinutes?: number;
 };
 
+/**
+ * 一套房源在地图上的位置代理。
+ *
+ * 数据里没有门牌号和经纬度，只能拿别的字段近似：
+ *   ① nearestMrt.station —— 最准的一档，另外还带了走到站要几分钟
+ *   ② area              —— 500 套里有 6 套没有 nearestMrt
+ *   ③ 都没有            —— 才真的算不出来
+ *
+ * 加这条兜底的原因很实在：SG0154（Bukit Panjang）没有最近地铁站，于是
+ * "步行 20 分钟到 NUS" 这个查询算不出它的时间，按「缺失 ≠ 不满足」放行，
+ * 结果它成了唯一一套结果、还排在第 1。可它在数据里明明写着 Bukit Panjang，
+ * 走去 NUS 要三个多小时。**放行是为了不误伤，不是为了顶替真答案** ——
+ * 只要还有一个能定位的字段，就该去查，而不是直接归入"查不到"。
+ */
+function originOf(listing: CleanListing): TransitOrigin | null {
+  if (listing.nearestMrt) return stationOrigin(listing.nearestMrt.station);
+  if (listing.area) return areaOrigin(listing.area);
+  return null;
+}
+
 /** 用户给了上限就用用户的，没给就用默认的 40 分钟 */
 export function effectiveMax(need: CommuteNeedInput): { minutes: number; assumed: boolean } {
   return need.maxMinutes === undefined
@@ -129,16 +149,28 @@ export async function applyCommuteFilter(
   if (!need) return passthrough;
   const max = effectiveMax(need);
 
-  const stations = [
-    ...new Set(
-      base.hits
-        .map((hit) => hit.listing.nearestMrt?.station)
-        .filter((station): station is string => station !== undefined && station !== null),
-    ),
-  ];
-  if (stations.length === 0) return passthrough;
+  const origins = new Map<string, TransitOrigin>();
+  for (const hit of base.hits) {
+    const origin = originOf(hit.listing);
+    if (origin) origins.set(origin.key, origin);
+  }
+  // 一套都定位不了 —— 没必要发请求，但也不能装作筛过了
+  if (origins.size === 0) {
+    return {
+      hits: base.hits,
+      total: base.total,
+      commute: {
+        applied: false,
+        maxMinutes: max.minutes,
+        assumedMax: max.assumed,
+        ...(base.hits.length > 0 ? { reason: "these listings have no location to route from" } : {}),
+        minutes: new Map(),
+        unverified: base.hits.length,
+      },
+    };
+  }
 
-  const lookup = await provider.lookup(stations, need.destination, need.mode);
+  const lookup = await provider.lookup([...origins.values()], need.destination, need.mode);
 
   if (!lookup.resolved) {
     // 外部服务不可用或目的地解析不出来 —— 退回接入前的行为：不筛，并明说。
@@ -162,25 +194,26 @@ export async function applyCommuteFilter(
   const kept: ScoredListing[] = [];
 
   for (const hit of base.hits) {
-    const mrt = hit.listing.nearestMrt;
-    const ride = mrt ? lookup.minutes.get(mrt.station) : undefined;
+    const origin = originOf(hit.listing);
+    const ride = origin ? lookup.minutes.get(origin.key) : undefined;
 
-    if (mrt === null || ride === undefined) {
+    if (origin === null || ride === undefined) {
       unverified += 1;
       kept.push(hit);
       continue;
     }
 
-    // 步行到站那一段**只对公共交通成立** —— 开车的人不会先走 5 分钟到地铁站
-    // 再上车。数据里没有门牌号，最近的地铁站是我们对"房子在哪"唯一的近似，
-    // 所以驾车/步行模式下直接用该站到目的地的耗时，不再叠加步行段。
+    // 步行到站那一段**只对公共交通成立**，而且只在起点真的是地铁站时成立 ——
+    // 开车的人不会先走 5 分钟到地铁站再上车；起点是区域中心时也没有"走到站"
+    // 这一段可言。数据里没有门牌号，站点/区域是我们对"房子在哪"仅有的近似。
+    const mrt = hit.listing.nearestMrt;
     const usesStation = need.mode === undefined || need.mode === "mrt" || need.mode === "bus";
-    const doorToDoor = usesStation ? mrt.walkMinutes + ride : ride;
+    const doorToDoor = mrt && usesStation ? mrt.walkMinutes + ride : ride;
     minutes.set(hit.listing.id, doorToDoor);
 
     if (doorToDoor <= max.minutes) {
       // 用真实门到门时间替换掉"走到最近地铁站几分钟"这个代理指标
-      kept.push(rescore(hit, doorToDoor, need.destination));
+      kept.push(rescore(hit, doorToDoor, need.destination, mrt === null));
     }
   }
 
@@ -271,7 +304,12 @@ const COMMUTE_RELAX_STEP_MINUTES = 15;
 const COMMUTE_BEST_MINUTES = 15;
 const COMMUTE_WORST_MINUTES = 75;
 
-function rescore(hit: ScoredListing, doorToDoor: number, destination: string): ScoredListing {
+function rescore(
+  hit: ScoredListing,
+  doorToDoor: number,
+  destination: string,
+  approximate = false,
+): ScoredListing {
   const breakdown = hit.breakdown.map((component) =>
     component.dimension === "commute"
       ? {
@@ -279,7 +317,10 @@ function rescore(hit: ScoredListing, doorToDoor: number, destination: string): S
           raw: decay(doorToDoor, COMMUTE_BEST_MINUTES, COMMUTE_WORST_MINUTES),
           weighted:
             decay(doorToDoor, COMMUTE_BEST_MINUTES, COMMUTE_WORST_MINUTES) * component.weight,
-          evidence: `${doorToDoor} min door-to-door to ${destination}`,
+          // 起点是区域中心而不是具体站点时说清楚，别把近似值说成精确值
+          evidence: approximate
+            ? `about ${doorToDoor} min to ${destination} (from ${hit.listing.area}, no station listed)`
+            : `${doorToDoor} min door-to-door to ${destination}`,
         }
       : component,
   );

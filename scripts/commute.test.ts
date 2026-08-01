@@ -23,10 +23,16 @@ import type { CleanListing } from "../src/lib/types.ts";
 import { departureTime } from "../src/lib/transit.ts";
 import type { TransitLookup, TransitProvider } from "../src/lib/transit.ts";
 
-function listing(id: string, station: string | null, walkMinutes = 5): ScoredListing {
+function listing(
+  id: string,
+  station: string | null,
+  walkMinutes = 5,
+  area = "Somewhere",
+): ScoredListing {
   return {
     listing: {
       id,
+      area,
       nearestMrt: station === null ? null : { station, line: "EWL", walkMinutes },
     },
     score: 0.5,
@@ -175,6 +181,41 @@ describe("通勤过滤", () => {
     );
     assert.equal(out.hits.length, 1);
     assert.equal(out.commute.minutes.get("A"), 40);
+  });
+
+  it("没有最近地铁站时退回按区域算 —— 有 area 就不该说算不出来", async () => {
+    // 真实翻车：SG0154（Bukit Panjang，无 nearestMrt）在"步行 20 分钟到 NUS"
+    // 这个查询里算不出时间被放行，成了唯一一套结果还排第 1；
+    // 而它走去 NUS 要三个多小时
+    const base = result([listing("A", "Clementi", 5), listing("FAR", null, 5, "Bukit Panjang")]);
+    const out = await applyCommuteFilter(
+      base,
+      { destination: "NUS", mode: "walk", maxMinutes: 20 },
+      stub({ Clementi: 15, "area:Bukit Panjang": 200 }),
+    );
+
+    assert.deepEqual(out.hits.map((h) => h.listing.id), ["A"], "200 分钟该被排除，而不是放行");
+    assert.equal(out.commute.unverified, 0, "有 area 就算得出来，不该记成无法核算");
+    assert.equal(out.commute.minutes.get("FAR"), 200);
+  });
+
+  it("按区域算时不叠加步行到站的时间 —— 那一段根本不存在", async () => {
+    const out = await applyCommuteFilter(
+      result([listing("A", null, 9, "Bukit Panjang")]),
+      { destination: "Raffles Place", maxMinutes: 40 },
+      stub({ "area:Bukit Panjang": 30 }),
+    );
+    assert.equal(out.commute.minutes.get("A"), 30, "不该变成 9 + 30");
+  });
+
+  it("区域和站点都没有时才算无法核算", async () => {
+    const out = await applyCommuteFilter(
+      result([{ ...listing("A", null), listing: { id: "A", area: null, nearestMrt: null } } as unknown as ScoredListing]),
+      { destination: "Raffles Place", maxMinutes: 40 },
+      stub({}),
+    );
+    assert.equal(out.commute.unverified, 1);
+    assert.equal(out.hits.length, 1, "算不出来仍然放行");
   });
 
   it("候选集为空时不调外部服务", async () => {
