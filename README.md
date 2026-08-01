@@ -4,7 +4,7 @@
 
 **线上 Demo**：https://homie-ai-take-home-assignment.vercel.app
 
-> 代码注释为中文（约 800 行），大量是踩坑记录，说明「为什么是这样而不是那样」。README 也用中文。
+> **网站可以直接用，不需要任何配置。** 线上环境已经接了我自己的 API key（Anthropic + Google Maps），余额充足，打开就能聊。
 
 ---
 
@@ -27,10 +27,13 @@
 
 ## 1. 快速开始
 
+**想在本地跑的话**（直接用线上 Demo 则跳过这一节）：
+
 ```bash
 npm install
-cp .env.example .env.local     # 填入 ANTHROPIC_API_KEY（必需）
-                               # 和 GOOGLE_MAPS_API_KEY（可选）
+cp .env.example .env.local     # 两个 key 都要填：
+                               #   ANTHROPIC_API_KEY     驱动抽取和回复
+                               #   GOOGLE_MAPS_API_KEY   查真实通勤时间
 npm run dev                    # http://localhost:3000
 ```
 
@@ -42,7 +45,9 @@ npm run clean           # 重跑数据清洗，产出 listings.clean.json + 质�
 node scripts/slots.ts --md   # 导出「系统到底会抽取哪些字段」的表格
 ```
 
-**`GOOGLE_MAPS_API_KEY` 缺失时不会崩**：通勤约束整条降级为「这一轮没按通勤筛」，界面上标出来，其余功能完全正常（见 `src/lib/transit.ts:254` 的 `UnavailableTransitProvider`）。这是刻意的——外部依赖不可用时，产品应当少一个功能，而不是变成一堆报错。
+**`GOOGLE_MAPS_API_KEY` 请务必配上**（Google Cloud 里启用 Distance Matrix API 即可）。通勤是这个产品里分量最重的一条约束——10 个示例 session 里有 7 个提到"我在哪上班/上学"，而房源数据本身**算不出任何站间行程时间**（见 [§5](#5-通勤从算不出来到真实路线)）。没有这个 key，产品最有意思的那部分就看不到了。
+
+缺失时**不会崩**：通勤约束整条降级为「这一轮没按通勤筛」并在界面上标出来，其余功能正常（见 `src/lib/transit.ts:254` 的 `UnavailableTransitProvider`）。但这是**故障时的安全网，不是推荐的运行方式**——外部依赖不可用时，产品应当少一个功能，而不是变成一堆报错。
 
 **技术栈**：Next.js 16（App Router）· React 19 · TypeScript 6 · Node ≥22.6 直接运行 `.ts`（无编译步骤）· `@anthropic-ai/sdk` + Claude Sonnet 5 · 部署在 Vercel。
 
@@ -738,7 +743,6 @@ Buona Vista · D05 · 188 sqft · 5 min walk to one-north (CCL) · 3-month min l
 
 **有更多时间会做的**：
 
-- **把示例 session 变成回归测试**。目前 `replay.ts` 产出的是给人看的 markdown，靠肉眼过。可以对**确定性的那一半**（抽取出的槽位、走的分支、命中数）写断言——这些不依赖模型措辞，完全可以自动化。
 - **通勤反查**。现在是"给定目的地筛房源"，反过来"这个预算下通勤最短的区域是哪几个"同样有用，数据都是现成的。
 - **多目的地**。"我在 Raffles Place 上班，伴侣在 one-north" 是常见诉求，`CommuteNeed` 现在只支持一个目的地。
 - **把 `escalation` 队列做成界面**。质量报告已经区分了「谁该去管这条 issue」，但目前只是 JSON/HTML，没有人可以在上面操作。
