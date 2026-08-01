@@ -153,12 +153,12 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     ? applyPatch(merged.state, relaxationPatch(accepted))
     : { state: merged.state, changes: [] as StateChange[] };
 
-  const state = applied.state;
-  const changes = [...merged.changes, ...applied.changes];
+  let state = applied.state;
+  let changes = [...merged.changes, ...applied.changes];
 
   // 用户这一轮提到的槽位 = 他在坚持的条件，放宽推演不该碰。
   // 刚接受放宽的那一条也算 —— 否则下一轮又会建议把它再松一档
-  const mentionedThisTurn = [
+  let mentionedThisTurn = [
     ...Object.keys(extraction.patch),
     ...Object.keys(accepted?.patch ?? {}),
   ] as SlotKey[];
@@ -167,15 +167,18 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   //
   // 分两段：内存过滤（纯函数、可测）跑完之后，才对候选集补一次外部行程时间查询。
   // 通勤不能做成谓词 —— 那会让 searchListings 变成 async，整套纯函数测试全得改。
-  const query = toSearchQuery(state);
-  const base = searchListings(listings, query, { limit: 10_000 });
-  const refined = await applyCommuteFilter(base, query.commute, options.transit);
-  const result = {
-    ...base,
-    hits: refined.hits.slice(0, limit),
-    total: refined.total,
+  const runSearch = async (forState: RequirementState) => {
+    const q = toSearchQuery(forState);
+    const base = searchListings(listings, q, { limit: 10_000 });
+    const refined = await applyCommuteFilter(base, q.commute, options.transit);
+    return {
+      query: q,
+      result: { ...base, hits: refined.hits.slice(0, limit), total: refined.total },
+      commute: refined.commute,
+    };
   };
-  const commute = refined.commute;
+
+  let { query, result, commute } = await runSearch(state);
 
   // --- ③ 分支（产品决策，确定性的） ----------------------------------------
   let situation: ReplySituation;
@@ -246,7 +249,24 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       });
       const gains = all.filter((r) => r.delta > 0);
 
-      if (gains.length > 0) {
+      // 用户已经指名了放宽哪一条（"yes, relax the commute window"）——
+      // 这时再把方案摆一遍、再问一句"要我按 35 分钟搜吗"，就是要他答应第二次。
+      // 他要的不是确认，是房子。
+      const named = extraction.acceptRelaxation
+        ? all.find((r) => r.key === extraction.acceptRelaxation && r.delta > 0)
+        : undefined;
+
+      if (named) {
+        const reapplied = applyPatch(state, relaxationPatch(named));
+        state = reapplied.state;
+        changes = [...changes, ...reapplied.changes];
+        mentionedThisTurn = [
+          ...mentionedThisTurn,
+          ...(Object.keys(named.patch) as SlotKey[]),
+        ];
+        ({ query, result, commute } = await runSearch(state));
+        situation = result.total > 0 ? "results" : "empty";
+      } else if (gains.length > 0) {
         // 松一档就有结果 —— 给增量最大的两条，多了就变成甩清单
         situation = "relax";
         relaxations = gains.slice(0, 2);

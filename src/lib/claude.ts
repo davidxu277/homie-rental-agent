@@ -159,7 +159,10 @@ Rules:
     Put **only the key** in acceptRelaxation — never the number. The system already knows what that option changes and
     applies it exactly; if you also write the number into set, you are re-typing a value that is already decided,
     and a typo there silently searches for something the user never agreed to.
-    - Only ever use a key from that list. If no options were offered, or they agree to something not on it, leave it empty.
+    - **They can also name the constraint without any list**: "relax the commute window", "raise my budget instead",
+      "open it up to any property type". Use the slot's own name as the key (commute, budgetMax, propertyTypes, …).
+      The system applies its standard step and tells them the resulting number — that is what "relax it" means.
+      Asking "shall I search with that applied?" after they already said which one to relax makes them agree twice.
     - If they name a different value instead of accepting ("make it 30 minutes"), that is a normal set — not an acceptance.
 13. Extract only. Do not answer the user and do not recommend listings.
 
