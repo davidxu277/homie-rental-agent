@@ -717,6 +717,15 @@ export type Relaxation = {
   hitsAfter: number;
   /** 放宽后多出来的房源数 */
   delta: number;
+  /**
+   * 这条放宽落到状态上到底改了什么。undefined 值 = 清除该槽位。
+   *
+   * **必须跟着方案一起走**：用户说"就按你说的来"之后，得有人把这个改动
+   * 真的写进状态。让模型照着自己上一句话重新说一遍数字，是把一个已经算好的
+   * 确定值又交回给概率 —— 它可能记错、可能被证据校验拦掉，
+   * 而用户看到的是"我明明答应了，结果什么都没变"。
+   */
+  patch: Partial<SearchQuery>;
 };
 
 export type RelaxOptions = SearchOptions & {
@@ -756,7 +765,25 @@ export type RelaxationCandidate = {
   description: string;
   /** 放宽之后的查询 */
   query: SearchQuery;
+  /** 相对于原查询改了哪些槽位 —— 用户点头后按这个改状态 */
+  patch: Partial<SearchQuery>;
 };
+
+/**
+ * 放宽前后的差异 —— 只留真正变了的字段。
+ *
+ * 显式的 undefined 也算一个变化（"取消房型限制"），所以不能用 `if (value)` 过滤；
+ * 键存在但值是 undefined，语义是"清除这个槽位"。
+ */
+export function queryDiff(before: SearchQuery, after: SearchQuery): Partial<SearchQuery> {
+  const patch: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const a = (before as Record<string, unknown>)[key];
+    const b = (after as Record<string, unknown>)[key];
+    if (JSON.stringify(a) !== JSON.stringify(b)) patch[key] = b;
+  }
+  return patch as Partial<SearchQuery>;
+}
 
 /** 有哪些可放宽的方案。纯函数，不碰数据 */
 export function relaxationCandidates(
@@ -774,6 +801,7 @@ export function relaxationCandidates(
       label: key,
       description: `set ${key} to ${JSON.stringify(value)}, as you asked`,
       query: { ...query, [key]: value },
+      patch: { [key]: value },
     });
   }
 
@@ -789,16 +817,19 @@ export function relaxationCandidates(
       label: notch.label,
       description: notch.describe(query),
       query: relaxed,
+      patch: queryDiff(query, relaxed),
     });
   }
 
   // 地点放宽需要外部提供候选 —— 引擎不做地理推断
   if (options.areaExpansion?.length && !keep.has("areas") && query.areas?.length) {
+    const areas = [...new Set([...query.areas, ...options.areaExpansion])];
     candidates.push({
       key: "areas",
       label: "Location",
       description: `also include ${options.areaExpansion.join(", ")}`,
-      query: { ...query, areas: [...new Set([...query.areas, ...options.areaExpansion])] },
+      query: { ...query, areas },
+      patch: { areas },
     });
   }
 
@@ -819,6 +850,7 @@ export function rankRelaxations(
     hitsBefore: before,
     hitsAfter: after[index],
     delta: after[index] - before,
+    patch: candidate.patch,
   }));
 
   // 返回全部推演结果，包括 delta = 0 的。

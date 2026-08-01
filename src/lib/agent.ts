@@ -34,6 +34,7 @@ import {
   type RequirementState,
   type SlotKey,
   type StateChange,
+  type StatePatch,
 } from "./state.ts";
 import type { CleanListing } from "./types.ts";
 import type { Vocab } from "./vocab.ts";
@@ -56,6 +57,17 @@ export type Conversation = {
   transcript?: Array<{ role: "user" | "agent"; text: string }>;
   /** 用户屏幕上当前能看到的房源 id —— 指代的候选范围 */
   shownIds?: string[];
+  /**
+   * 上一轮摆到用户面前的放宽方案，连同它对状态的确切改动。
+   *
+   * 少了它就会出现这个失败：agent 说"放宽到 35 分钟能多出 5 套，要我这么搜吗"，
+   * 用户答"sure thing"，然后**什么都没发生** —— 侧栏还写着 20 分钟，结果还是 0 套，
+   * agent 却说"这就给你调出来"。用户明确点了头，系统却当没听见。
+   *
+   * 方案本身是确定性算出来的，改动早就在手上了；用户点头之后要做的是
+   * 把它取出来用，而不是让模型照着自己上一句话把数字重说一遍。
+   */
+  offeredRelaxations?: Relaxation[];
   /** 连续追问了几轮 —— 超过上限就闭嘴给结果，防止死循环 */
   consecutiveClarify: number;
 };
@@ -126,11 +138,30 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
     userText,
     vocab,
     lastAgentMessage: conversation.lastReply,
+    offeredRelaxations: conversation.offeredRelaxations?.map((r) => ({
+      key: r.key,
+      description: r.description,
+    })),
   });
-  const { state, changes } = applyPatch(conversation.state, extraction.patch);
+  const merged = applyPatch(conversation.state, extraction.patch);
 
-  // 用户这一轮提到的槽位 = 他在坚持的条件，放宽推演不该碰
-  const mentionedThisTurn = Object.keys(extraction.patch) as SlotKey[];
+  // 用户接受了上一轮摆出来的某条放宽 —— 这一步是确定性的：
+  // 方案在 offeredRelaxations 里，改动也在里面，取出来照做即可。
+  // 模型只负责认出"他答应的是哪一条"，数字不经它的手。
+  const accepted = acceptedRelaxation(conversation, extraction.acceptRelaxation);
+  const applied = accepted
+    ? applyPatch(merged.state, relaxationPatch(accepted))
+    : { state: merged.state, changes: [] as StateChange[] };
+
+  const state = applied.state;
+  const changes = [...merged.changes, ...applied.changes];
+
+  // 用户这一轮提到的槽位 = 他在坚持的条件，放宽推演不该碰。
+  // 刚接受放宽的那一条也算 —— 否则下一轮又会建议把它再松一档
+  const mentionedThisTurn = [
+    ...Object.keys(extraction.patch),
+    ...Object.keys(accepted?.patch ?? {}),
+  ] as SlotKey[];
 
   // --- ② 检索 --------------------------------------------------------------
   //
@@ -182,6 +213,11 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
   } else if (askingAboutShownListings && !extraction.wantsRelaxAdvice && result.total > 0) {
     // 追问已展示的房源 —— 直接答他问的，不要再走"要不要放宽"那套。
     // 邀请上一轮已经发出去了，每轮都重复一遍就是催促。
+    situation = "results";
+  } else if (accepted && result.total > 0) {
+    // 刚点头接受了放宽 —— 他要的是那批房子，不是再来一轮"要不要再松一点"。
+    // 少了这一条，放宽后正好只有 5 套时会又落进"少"的分支，用户连着两轮
+    // 收到的都是建议而不是结果。
     situation = "results";
   } else if (
     result.total === 0 ||
@@ -302,6 +338,8 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       shownIds: showCards
         ? result.hits.map((h) => h.listing.id)
         : (conversation.shownIds ?? []),
+      // 只有这一轮真的摆了方案出来，下一轮才可能"接受"它
+      offeredRelaxations: relaxations.length > 0 ? relaxations : undefined,
     },
     situation,
     reply: reply.text,
@@ -316,4 +354,29 @@ export async function runTurn(options: TurnOptions): Promise<TurnResult> {
       output: extraction.usage.output + reply.usage.output,
     },
   };
+}
+
+/**
+ * 用户接受的是哪一条放宽方案。
+ *
+ * key 走**闭集**：只能是上一轮真的摆到用户面前的那几条。模型认错了、
+ * 或者凭空说一个 key，都会落到集合外而被丢弃 —— 和地点、出行方式一样的路子，
+ * 模型提议，代码核对。
+ */
+function acceptedRelaxation(
+  conversation: Conversation,
+  key: string | undefined,
+): Relaxation | undefined {
+  if (!key) return undefined;
+  return (conversation.offeredRelaxations ?? []).find((r) => r.key === key);
+}
+
+/** 放宽方案 → 状态补丁。用户点头就是他自己说的，所以是 stated */
+function relaxationPatch(relaxation: Relaxation): StatePatch {
+  const patch: StatePatch = {};
+  for (const [slot, value] of Object.entries(relaxation.patch)) {
+    // undefined = 取消这条约束；状态层用 null 表示"明确清除"
+    patch[slot as SlotKey] = { value: value === undefined ? null : value, source: "stated" };
+  }
+  return patch;
 }

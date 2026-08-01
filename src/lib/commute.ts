@@ -272,11 +272,13 @@ export async function computeRelaxationsWithCommute(
   if (!options.keep?.includes("commute")) {
     const max = effectiveMax(need);
     const relaxed = max.minutes + COMMUTE_RELAX_STEP_MINUTES;
+    const loosened = { ...need, maxMinutes: relaxed };
     candidates.push({
       key: "commute",
       label: "Commute",
       description: `allow up to ${relaxed} min to ${need.destination}`,
-      query: { ...query, commute: { ...need, maxMinutes: relaxed } },
+      query: { ...query, commute: loosened },
+      patch: { commute: loosened },
     });
   }
   const [before, ...after] = await Promise.all([

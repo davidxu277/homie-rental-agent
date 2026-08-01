@@ -340,6 +340,7 @@ describe("schema 的两个硬约束", () => {
       properties: { set: { properties: Record<string, unknown> } };
     };
     assert.deepEqual(schema.required.slice().sort(), [
+      "acceptRelaxation",
       "adjust",
       "ambiguous",
       "clear",

@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 import {
   computeRelaxations,
   DEFAULT_NOTCHES,
+  queryDiff,
+  relaxationCandidates,
   searchListings,
   type SearchQuery,
 } from "../src/lib/search.ts";
@@ -530,5 +532,72 @@ describe("真实数据上的一致性", () => {
       assert.equal(hit.listing.dataQuality.severity === "block", false);
       assert.ok(hit.listing.monthlyRentSgd !== null);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * 放宽方案必须自带「它到底改了什么」。
+ *
+ * 真实事故：agent 说"放宽到 35 分钟能多出 5 套，要我这么搜吗"，用户答
+ * "sure thing" —— 然后什么都没发生。侧栏还是 20 分钟，结果还是 0 套，
+ * agent 却接着说"这就调出来"。用户点了头，系统却没有任何东西接住这个"是"。
+ *
+ * 根因是方案只带了**说辞**没带**改动**，于是"应用它"只能靠模型照着自己
+ * 上一句话把数字重说一遍。数字明明是确定性算出来的，没有理由再经过一次概率。
+ */
+describe("放宽方案带得动它自己的改动", () => {
+  const QUERY: SearchQuery = {
+    budgetMax: 2000,
+    sizeSqftMin: 800,
+    maxWalkMinutes: 10,
+    propertyTypes: ["Condominium"],
+  };
+
+  it("每条方案的 patch 打回原查询，等于它自己评估过的那个查询", () => {
+    // 这是最关键的不变式：用户看到的"多 5 套"是按 candidate.query 数出来的，
+    // 点头之后被应用的是 candidate.patch —— 两者必须指向同一个查询，
+    // 否则用户拿到的结果和他答应的那个数字对不上
+    for (const candidate of relaxationCandidates(QUERY)) {
+      const applied = { ...QUERY, ...candidate.patch };
+      assert.deepEqual(
+        applied,
+        candidate.query,
+        `${candidate.key} 的 patch 和它评估用的查询不一致`,
+      );
+    }
+  });
+
+  it("patch 只含真正变了的槽位 —— 不能顺手把别的条件也改了", () => {
+    for (const candidate of relaxationCandidates(QUERY)) {
+      const keys = Object.keys(candidate.patch);
+      assert.ok(keys.length > 0, `${candidate.key} 没带任何改动`);
+      for (const key of keys) {
+        assert.notDeepEqual(
+          (candidate.query as Record<string, unknown>)[key],
+          (QUERY as Record<string, unknown>)[key],
+          `${candidate.key} 的 patch 里混进了没变的 ${key}`,
+        );
+      }
+    }
+  });
+
+  it("取消整条约束时，patch 里是显式的 undefined 而不是漏掉这个键", () => {
+    // "开放任意房型"要把 propertyTypes 清掉。键漏了就等于"这轮没提到"，
+    // 状态会原样保留，用户答应了却依然被这条筛着
+    const candidate = relaxationCandidates(QUERY).find((c) => c.key === "propertyTypes");
+    assert.ok(candidate);
+    assert.ok("propertyTypes" in candidate.patch);
+    assert.equal(candidate.patch.propertyTypes, undefined);
+  });
+
+  it("queryDiff 认得出「清除」和「没变」的区别", () => {
+    assert.deepEqual(queryDiff({ budgetMax: 2000 }, { budgetMax: 2000 }), {});
+    assert.deepEqual(queryDiff({ budgetMax: 2000 }, { budgetMax: 2200 }), { budgetMax: 2200 });
+
+    const cleared = queryDiff({ propertyTypes: ["HDB"] }, { propertyTypes: undefined });
+    assert.ok("propertyTypes" in cleared);
+    assert.equal(cleared.propertyTypes, undefined);
   });
 });

@@ -153,7 +153,15 @@ Rules:
 11. When the user **asks about relaxing**, set wantsRelaxAdvice to true. Typical phrasings:
     "which requirement is hardest to meet?", "what should I compromise on?", "how do I get more options?", "am I asking for too much?"
     Note the difference from rule 8: this is **asking for advice**, not issuing an adjustment, so leave adjust alone.
-12. Extract only. Do not answer the user and do not recommend listings.
+12. **When the user agrees to a relaxation offered last turn, set acceptRelaxation to that option's key.**
+    When options were offered, they are listed for you below the conversation, each with its key.
+    "sure thing", "yes please", "ok do that", "let's try the 35 minutes one", "the commute one" are all acceptances.
+    Put **only the key** in acceptRelaxation — never the number. The system already knows what that option changes and
+    applies it exactly; if you also write the number into set, you are re-typing a value that is already decided,
+    and a typo there silently searches for something the user never agreed to.
+    - Only ever use a key from that list. If no options were offered, or they agree to something not on it, leave it empty.
+    - If they name a different value instead of accepting ("make it 30 minutes"), that is a normal set — not an acceptance.
+13. Extract only. Do not answer the user and do not recommend listings.
 
 Note: this system has no "nationality" filter dimension and the schema has no field for it. When a user asks about nationality, do not try to route around it with other fields.`;
 
@@ -193,6 +201,8 @@ export type ExtractOptions = {
    * 于是状态没变，下一轮又问一遍。答案必须和问题一起看才有意义。
    */
   lastAgentMessage?: string;
+  /** 上一轮摆出去的放宽方案 —— 用户这一轮可能是在点头接受其中一条 */
+  offeredRelaxations?: Array<{ key: string; description: string }>;
   /** 参考日期，用于把"下个月"这类相对时间算成具体日期 */
   today?: string;
 };
@@ -251,6 +261,13 @@ export async function extractRequirements(options: ExtractOptions): Promise<Extr
                     "",
                     "What you said to the user last turn (they are very likely answering it):",
                     options.lastAgentMessage,
+                  ]
+                : []),
+              ...(options.offeredRelaxations?.length
+                ? [
+                    "",
+                    "Relaxation options offered last turn — if the user is accepting one, put its key in acceptRelaxation:",
+                    ...options.offeredRelaxations.map((r) => `  ${r.key}: ${r.description}`),
                   ]
                 : []),
               "",

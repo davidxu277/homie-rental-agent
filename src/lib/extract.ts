@@ -112,6 +112,15 @@ export type ExtractedPatch = {
    * 而且答案是现成的：放宽每一条各能多出多少套，增量最大的那条就是最卡的那条。
    */
   wantsRelaxAdvice?: boolean;
+  /**
+   * 用户接受了上一轮摆出来的某条放宽方案，值是那条方案的 key。
+   *
+   * 只写 key，**不写数字**。方案是系统确定性算出来的，改动早就在手上；
+   * 让模型照着自己上一句话把 "35 minutes" 再说一遍，等于把一个已知的确定值
+   * 重新交给概率。踩过：agent 提议放宽到 35 分钟、用户答 "sure thing"，
+   * 结果状态一动没动，连着三轮都是 0 套，而 agent 还在说"这就调出来"。
+   */
+  acceptRelaxation?: string;
   /** 地点解析的说明，给用户看："我是按 Clementi、Dover 一带找的" */
   locationNote?: string;
 };
@@ -425,6 +434,7 @@ export function buildPatchSchema(_vocab: Vocab): Record<string, unknown> {
       },
       wantsResultsNow: { type: "boolean" },
       wantsRelaxAdvice: { type: "boolean" },
+      acceptRelaxation: { type: "string" },
       locationNote: { type: "string" },
     },
     // 结构化输出限制**可选**参数最多 24 个，而 set 里就有 22 个。
@@ -439,6 +449,7 @@ export function buildPatchSchema(_vocab: Vocab): Record<string, unknown> {
       "ambiguous",
       "wantsResultsNow",
       "wantsRelaxAdvice",
+      "acceptRelaxation",
       "locationNote",
     ],
   };
@@ -458,6 +469,8 @@ export type ValidationResult = {
   wantsResultsNow: boolean;
   /** 用户直接开口问该放宽哪一条 */
   wantsRelaxAdvice: boolean;
+  /** 用户接受了上一轮的哪条放宽方案（key）。是否真的存在这条方案由 agent 核对 */
+  acceptRelaxation?: string;
   locationNote?: string;
 };
 
@@ -659,6 +672,10 @@ export function validatePatch(
     ambiguous,
     wantsResultsNow: input.wantsResultsNow === true,
     wantsRelaxAdvice: input.wantsRelaxAdvice === true,
+    // key 本身不在这里核对 —— 只有 agent 知道上一轮到底摆了哪几条方案出来
+    ...(typeof input.acceptRelaxation === "string" && input.acceptRelaxation
+      ? { acceptRelaxation: input.acceptRelaxation }
+      : {}),
     ...(input.locationNote ? { locationNote: input.locationNote } : {}),
   };
 }
