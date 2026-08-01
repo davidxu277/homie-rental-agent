@@ -551,6 +551,34 @@ describe("通勤的方式和时长要有原话支撑", () => {
     assert.equal((patch.commute?.value as { maxMinutes?: number }).maxMinutes, undefined);
   });
 
+  it("数字和单位连着写也算 —— 用户明说的条件不能被默认值顶掉", () => {
+    // 真实翻车："30mins" 里 min 前面没有词边界，用户自己说的 30 分钟被丢掉，
+    // 系统转而套用 40 分钟默认上限，结果比用户要的还宽
+    for (const text of [
+      "i'm a nus student, find me a room where i can go to school within 30mins",
+      "20min to the office in Clementi is my limit",
+      "about 1hr to Clementi is fine",
+    ]) {
+      const { patch } = validatePatch(
+        { set: { commute: { destination: "Clementi", maxMinutes: 30 } } },
+        VOCAB,
+        {},
+        text.includes("Clementi") ? text : `${text} — I study at Clementi`,
+      );
+      assert.equal((patch.commute?.value as { maxMinutes?: number }).maxMinutes, 30, text);
+    }
+  });
+
+  it("min 是 administrator 的子串，但那不算时长", () => {
+    const { patch } = validatePatch(
+      { set: { commute: { destination: "Clementi", maxMinutes: 25 } } },
+      VOCAB,
+      {},
+      "I work as an administrator in Clementi",
+    );
+    assert.equal((patch.commute?.value as { maxMinutes?: number }).maxMinutes, undefined);
+  });
+
   it("「half an hour」算时长", () => {
     const { patch } = validatePatch(
       { set: { commute: { destination: "Clementi", maxMinutes: 30 } } },

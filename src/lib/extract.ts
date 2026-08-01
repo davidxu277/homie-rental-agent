@@ -132,9 +132,18 @@ const MODE_EVIDENCE: Record<string, RegExp> = {
   walk: /\b(walk\w*|on foot|by foot|stroll\w*)\b/i,
 };
 
-/** 时长的词面证据 —— 必须出现时间单位，光有数字不算（"3-bedroom" 也有数字） */
+/**
+ * 时长的词面证据 —— 必须出现时间单位，光有数字不算（"3-bedroom" 也有数字）。
+ *
+ * 第二条分支是给「数字和单位连着写」的：真实翻车 "go to school within 30mins" ——
+ * "30mins" 里 min 前面没有词边界，用户自己说的 30 分钟被当成没依据丢掉，
+ * 系统转而套用 40 分钟默认值。**用户明说的条件被系统默认值顶掉是最坏的一种错**。
+ *
+ * 不能干脆去掉 \b：min 是 administrator、terminal 这类词的子串，去掉边界之后
+ * 随便一句话都能给编造的时长背书。
+ */
 const DURATION_EVIDENCE =
-  /\b(min|mins|minute|minutes|hour|hours|hr|hrs|half an hour|quarter of an hour)\b/i;
+  /\b(min|mins|minute|minutes|hour|hours|hr|hrs)\b|\d\s*(mins?|minutes?|hours?|hrs?|m|h)\b|half an hour|quarter of an hour/i;
 
 /**
  * 地名里那些**不足以单独作为证据**的通用词。
